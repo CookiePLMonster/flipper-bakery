@@ -78,3 +78,7 @@ Pbm* pbm_load_file(Storage* storage, const char* path) {
 void pbm_free(Pbm* pbm) {
     free(pbm);
 }
+
+uint16_t pbm_get_pitch(Pbm* pbm) {
+    return (pbm->width + 7) & ~7;
+}
