@@ -1,0 +1,20 @@
+# For details & more options, see documentation/AppManifests.md in firmware repo
+
+App(
+    appid="mode7_demo",  # Must be unique
+    name="Mode 7 Demo",  # Displayed in menus
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="mode7_demo_app",
+    stack_size=1 * 1024,
+    fap_category="Examples",
+    requires=[
+        "gui", "storage"
+    ],
+    # Optional values
+    # fap_version="0.1",
+    fap_icon="mode7_demo.png",  # 10x10 1-bit PNG
+    # fap_description="A simple app",
+    # fap_author="J. Doe",
+    # fap_weburl="https://github.com/user/mode7_demo",
+    fap_file_assets="assets",
+)
