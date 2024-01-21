@@ -9,14 +9,18 @@
 
 #include <algorithm>
 
+#define TAG "Mode7"
+
 // This is simplified compared to the "traditional" bit band alias access, since we only occupy the bottom 256KB of SRAM anyway
 #define BIT_BAND_ALIAS(var) \
     (reinterpret_cast<uint32_t*>((reinterpret_cast<uintptr_t>(var) << 5) | 0x22000000))
 
 static constexpr uint32_t MAIN_VIEW = 0;
 
-static constexpr uint8_t SCREEN_WIDTH = 128;
-static constexpr uint8_t SCREEN_HEIGHT = 64;
+static constexpr int16_t SCREEN_WIDTH = 128;
+static constexpr int16_t SCREEN_HEIGHT = 64;
+static constexpr int16_t EYE_DISTANCE = 32;
+static constexpr int16_t HORIZON = 20;
 static constexpr uint8_t TILE_SIZE = 8;
 
 static uint32_t exit_app(void*) {
@@ -96,25 +100,31 @@ static void tick_callback(void* context) {
         1 << next_backbuffer,
         FuriFlagWaitAny | FuriFlagNoClear,
         FuriWaitForever);
-    //memset(back_buffer[next_backbuffer], 0, 16 * 64);
+    memset(back_buffer[next_backbuffer], 0, 16 * 64);
 
     // This is "slow" but simulates how backgrounds are rasterized. Use it for now.
     // This method also allows for easy repeat modes
     uint32_t* screen_bitmap = BIT_BAND_ALIAS(back_buffer[next_backbuffer]);
-    memset(screen_bitmap, 0, 128 * 64);
-    for(uint32_t y = 0; y < 64; ++y) {
-        int32_t sampled_y = y - g_offset_y;
-        if(sampled_y >= 0 && sampled_y < background_height) {
-            for(uint32_t x = 0; x < 128; ++x) {
-                int32_t sampled_x = x - g_offset_x;
-                if(sampled_x >= 0 && sampled_x < background_width) {
-                    screen_bitmap[x] =
-                        background_bitmap[(sampled_y * background_pitch) + sampled_x];
-                }
+    for(int32_t y = -SCREEN_HEIGHT / 2; y < SCREEN_HEIGHT / 2; ++y) {
+        for(int32_t x = -SCREEN_WIDTH / 2; x < SCREEN_WIDTH / 2; ++x) {
+            int32_t dx = x + (SCREEN_WIDTH / 2);
+            int32_t dy = y + (SCREEN_HEIGHT / 2);
+
+            int32_t px = x;
+            int32_t py = EYE_DISTANCE;
+            int32_t pz = y + HORIZON;
+
+            float sx = static_cast<float>(px) / pz;
+            float sy = static_cast<float>(py) / -pz;
+
+            int32_t sampled_x = (sx * background_width) + g_offset_x;
+            int32_t sampled_y = (sy * background_height) + g_offset_y;
+            if(sampled_x >= 0 && sampled_x < background_width && sampled_y >= 0 &&
+               sampled_y < background_height) {
+                screen_bitmap[dy * 128 + dx] =
+                    background_bitmap[(sampled_y * background_pitch) + sampled_x];
             }
         }
-
-        screen_bitmap += 128;
     }
 
     current_backbuffer = next_backbuffer;
@@ -130,8 +140,8 @@ extern "C" int32_t mode7_demo_app(void* p) {
     test_file = pbm_load_file(storage, APP_ASSETS_PATH("cookie_monster.pbm"));
     furi_record_close(RECORD_STORAGE);
 
-    g_offset_x = 64 - (test_file->width / 2);
-    g_offset_y = 0;
+    g_offset_x = 64; //64 - (test_file->width / 2);
+    g_offset_y = 150;
 
     furi_timer_set_thread_priority(FuriTimerThreadPriorityElevated);
 
