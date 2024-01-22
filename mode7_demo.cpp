@@ -7,7 +7,7 @@
 
 #include "util/pbm.h"
 
-#include <algorithm>
+#include <utility>
 
 #define TAG "Mode7"
 
@@ -19,7 +19,7 @@ static constexpr uint32_t MAIN_VIEW = 0;
 
 static constexpr int16_t SCREEN_WIDTH = 128;
 static constexpr int16_t SCREEN_HEIGHT = 64;
-static int16_t EYE_DISTANCE = 150;
+static constexpr int16_t EYE_DISTANCE = 150;
 static constexpr int16_t HORIZON = 15;
 
 static uint32_t exit_app(void*) {
@@ -38,6 +38,9 @@ static uint8_t current_backbuffer = 0;
 
 static FuriEventFlag* presentation_flag;
 
+static double g_fps = 0.0;
+static uint32_t g_last_tick_time;
+
 static void draw_test_checkerboard(Canvas* canvas, void* model) {
     UNUSED(model);
 
@@ -45,6 +48,12 @@ static void draw_test_checkerboard(Canvas* canvas, void* model) {
     furi_event_flag_clear(presentation_flag, 1 << buffer_to_use);
     canvas_draw_xbm(canvas, 0, 0, 128, 64, back_buffer[buffer_to_use]);
     furi_event_flag_set(presentation_flag, 1 << buffer_to_use);
+
+    FuriString* fps_text = furi_string_alloc_printf("%0.f", g_fps);
+    canvas_set_font(canvas, FontSecondary);
+    canvas_draw_str_aligned(
+        canvas, 124, 8, AlignRight, AlignBottom, furi_string_get_cstr(fps_text));
+    furi_string_free(fps_text);
 }
 
 /*static bool input_callback(InputEvent* event, void* context) {
@@ -93,6 +102,12 @@ static uint32_t sample_background(
 static void tick_callback(void* context) {
     View* view = static_cast<View*>(context);
 
+    const uint32_t current_tick = furi_get_tick();
+    const uint32_t last_tick = std::exchange(g_last_tick_time, current_tick);
+
+    const uint32_t tick_delta = (current_tick - last_tick) * 1000;
+    g_fps = 1000.0 / (tick_delta / furi_kernel_get_tick_frequency());
+
     // TODO: This should react to events and cache the input buttons state, not this
     if(!furi_hal_gpio_read(&gpio_button_right)) {
         g_offset_x++;
@@ -125,7 +140,6 @@ static void tick_callback(void* context) {
         1 << next_backbuffer,
         FuriFlagWaitAny | FuriFlagNoClear,
         FuriWaitForever);
-    memset(back_buffer[next_backbuffer], 0, 16 * 64);
 
     // This is "slow" but simulates how backgrounds are rasterized. Use it for now.
     // This method also allows for easy repeat modes
@@ -161,6 +175,8 @@ static void tick_callback(void* context) {
     if(view != nullptr) {
         view_commit_model(view, true);
     }
+
+    furi_thread_yield();
 }
 
 extern "C" int32_t mode7_demo_app(void* p) {
@@ -214,8 +230,12 @@ extern "C" int32_t mode7_demo_app(void* p) {
     view_free(test_view);
     view_dispatcher_free(view_dispatcher);
 
-    furi_delay_ms(1000);
     furi_record_close(RECORD_GUI);
+
+    // This shouldn't be needed, but I was getting an use-after-free when freeing
+    // the screen buffers - possibly the draw callback is still running after freeing the view?
+    // Just in case, wait for all buffer accesses to finish
+    furi_event_flag_wait(presentation_flag, 0xFFFFFFFFu, FuriFlagWaitAll, FuriWaitForever);
     free(screen_buffer_space);
     furi_event_flag_free(presentation_flag);
 
