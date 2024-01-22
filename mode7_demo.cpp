@@ -26,8 +26,8 @@ static uint32_t exit_app(void*) {
     return VIEW_NONE;
 }
 
-static int16_t g_offset_x = 0;
-static int16_t g_offset_y = 0;
+static float g_offset_x = 0.0f;
+static float g_offset_y = 0.0f;
 static int16_t g_rotation = 0;
 
 static Pbm* test_file;
@@ -99,6 +99,31 @@ static uint32_t sample_background(
     return bitmap[sample_y * pitch + sample_x];
 }
 
+static void handle_inputs() {
+    // TODO: This should react to events and cache the input buttons state, not this
+    float x = 0.0f, y = 0.0f;
+
+    if(!furi_hal_gpio_read(&gpio_button_right)) {
+        x++;
+    } else if(!furi_hal_gpio_read(&gpio_button_left)) {
+        x--;
+    }
+    if(!furi_hal_gpio_read(&gpio_button_down)) {
+        y++;
+    } else if(!furi_hal_gpio_read(&gpio_button_up)) {
+        y--;
+    }
+
+    float angle_sin, angle_cos;
+    sincosf((g_rotation * M_PI) / 180.0f, &angle_sin, &angle_cos);
+    g_offset_x += x * angle_cos - y * angle_sin;
+    g_offset_y += x * angle_sin + y * angle_cos;
+
+    if(furi_hal_gpio_read(&gpio_button_ok)) {
+        g_rotation = (g_rotation + 2) % 360;
+    }
+}
+
 static void tick_callback(void* context) {
     View* view = static_cast<View*>(context);
 
@@ -108,21 +133,7 @@ static void tick_callback(void* context) {
     const uint32_t tick_delta = (current_tick - last_tick) * 1000;
     g_fps = 1000.0 / (tick_delta / furi_kernel_get_tick_frequency());
 
-    // TODO: This should react to events and cache the input buttons state, not this
-    if(!furi_hal_gpio_read(&gpio_button_right)) {
-        g_offset_x++;
-    } else if(!furi_hal_gpio_read(&gpio_button_left)) {
-        g_offset_x--;
-    }
-    if(!furi_hal_gpio_read(&gpio_button_down)) {
-        g_offset_y++;
-    } else if(!furi_hal_gpio_read(&gpio_button_up)) {
-        g_offset_y--;
-    }
-
-    if(furi_hal_gpio_read(&gpio_button_ok)) {
-        g_rotation = (g_rotation + 2) % 360;
-    }
+    handle_inputs();
 
     const uint8_t next_backbuffer = (current_backbuffer + 1) % 2;
 
@@ -158,13 +169,10 @@ static void tick_callback(void* context) {
             float rsx = sx * angle_cos - sy * angle_sin;
             float rsy = sx * angle_sin + sy * angle_cos;
 
-            float move_x = g_offset_x * angle_cos - g_offset_y * angle_sin;
-            float move_y = g_offset_x * angle_sin + g_offset_y * angle_cos;
-
             screen_bitmap[dy * 128 + dx] = sample_background(
                 background_bitmap,
-                (rsx * 16) + move_x,
-                (rsy * 16) + move_y,
+                (rsx * 16) + g_offset_x,
+                (rsy * 16) + g_offset_y,
                 background_pitch,
                 background_width,
                 background_height);
@@ -185,9 +193,6 @@ extern "C" int32_t mode7_demo_app(void* p) {
     Storage* storage = static_cast<Storage*>(furi_record_open(RECORD_STORAGE));
     test_file = pbm_load_file(storage, APP_ASSETS_PATH("floor.pbm"));
     furi_record_close(RECORD_STORAGE);
-
-    g_offset_x = 64; //64 - (test_file->width / 2);
-    g_offset_y = 150;
 
     furi_timer_set_thread_priority(FuriTimerThreadPriorityElevated);
 
