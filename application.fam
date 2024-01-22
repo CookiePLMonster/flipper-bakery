@@ -13,8 +13,8 @@ App(
     # Optional values
     # fap_version="0.1",
     fap_icon="mode7_demo.png",  # 10x10 1-bit PNG
-    # fap_description="A simple app",
-    # fap_author="J. Doe",
-    # fap_weburl="https://github.com/user/mode7_demo",
+    fap_description="A demo of pseudo-3D Mode 7 rendering",
+    fap_author="Silent",
+    fap_weburl="https://github.com/CookiePLMonster/flipper-mode7-demo",
     fap_file_assets="assets",
 )
