@@ -19,12 +19,10 @@ static constexpr uint32_t MAIN_VIEW = 0;
 
 static constexpr int16_t SCREEN_WIDTH = 128;
 static constexpr int16_t SCREEN_HEIGHT = 64;
-static constexpr int16_t EYE_DISTANCE = 32;
-static constexpr int16_t HORIZON = 10;
-static constexpr uint8_t TILE_SIZE = 8;
+static int16_t EYE_DISTANCE = 150;
+static constexpr int16_t HORIZON = 15;
 
 static uint32_t exit_app(void*) {
-    FURI_LOG_I("Test", "exit_app");
     return VIEW_NONE;
 }
 
@@ -138,11 +136,11 @@ static void tick_callback(void* context) {
             int32_t dy = y + (SCREEN_HEIGHT / 2);
 
             int32_t px = x;
-            int32_t py = EYE_DISTANCE;
+            int32_t py = y + EYE_DISTANCE;
             int32_t pz = y + HORIZON;
 
             float sx = static_cast<float>(px) / pz;
-            float sy = static_cast<float>(py) / -pz;
+            float sy = static_cast<float>(-py) / pz;
             float rsx = sx * angle_cos - sy * angle_sin;
             float rsy = sx * angle_sin + sy * angle_cos;
 
@@ -151,8 +149,8 @@ static void tick_callback(void* context) {
 
             screen_bitmap[dy * 128 + dx] = sample_background(
                 background_bitmap,
-                (rsx * background_width) + move_x,
-                (rsy * background_height) + move_y,
+                (rsx * 16) + move_x,
+                (rsy * 16) + move_y,
                 background_pitch,
                 background_width,
                 background_height);
