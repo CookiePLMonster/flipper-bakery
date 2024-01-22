@@ -31,6 +31,8 @@ static float g_offset_x = 0.0f;
 static float g_offset_y = 0.0f;
 static int16_t g_rotation = 0;
 
+static FuriMutex* g_background_switch_mutex;
+
 static uint8_t g_current_background_id = 0;
 static Pbm* g_current_background_pbm;
 
@@ -50,6 +52,10 @@ static double g_fps = 0.0;
 static uint32_t g_last_tick_time;
 
 static void reload_background() {
+    if(furi_mutex_acquire(g_background_switch_mutex, FuriWaitForever) != FuriStatusOk) {
+        return;
+    }
+
     if(g_current_background_pbm != nullptr) {
         pbm_free(g_current_background_pbm);
     }
@@ -57,6 +63,8 @@ static void reload_background() {
     Storage* storage = static_cast<Storage*>(furi_record_open(RECORD_STORAGE));
     g_current_background_pbm = pbm_load_file(storage, g_backgrounds[g_current_background_id]);
     furi_record_close(RECORD_STORAGE);
+
+    furi_mutex_release(g_background_switch_mutex);
 }
 
 static void draw_test_checkerboard(Canvas* canvas, void* model) {
@@ -124,7 +132,7 @@ static void handle_inputs() {
     g_offset_y += x * angle_sin + y * angle_cos;
 
     if(furi_hal_gpio_read(&gpio_button_ok)) {
-        g_rotation = (g_rotation + 2) % 360;
+        g_rotation = (g_rotation + 1) % 360;
     }
 }
 
@@ -141,12 +149,6 @@ static void tick_callback(void* context) {
 
     const uint8_t next_backbuffer = (current_backbuffer + 1) % 2;
 
-    // "Rasterize" the background
-    const int32_t background_width = g_current_background_pbm->width;
-    const uint32_t background_pitch = pbm_get_pitch(g_current_background_pbm);
-    const int32_t background_height = g_current_background_pbm->height;
-    const uint32_t* background_bitmap = BIT_BAND_ALIAS(g_current_background_pbm->bitmap);
-
     float angle_sin, angle_cos;
     sincosf((g_rotation * M_PI) / 180.0f, &angle_sin, &angle_cos);
 
@@ -155,6 +157,16 @@ static void tick_callback(void* context) {
         1 << next_backbuffer,
         FuriFlagWaitAny | FuriFlagNoClear,
         FuriWaitForever);
+
+    if(furi_mutex_acquire(g_background_switch_mutex, FuriWaitForever) != FuriStatusOk) {
+        return;
+    }
+
+    // "Rasterize" the background
+    const int32_t background_width = g_current_background_pbm->width;
+    const uint32_t background_pitch = pbm_get_pitch(g_current_background_pbm);
+    const int32_t background_height = g_current_background_pbm->height;
+    const uint32_t* background_bitmap = BIT_BAND_ALIAS(g_current_background_pbm->bitmap);
 
     // This is "slow" but simulates how backgrounds are rasterized. Use it for now.
     // This method also allows for easy repeat modes
@@ -183,17 +195,18 @@ static void tick_callback(void* context) {
         }
     }
 
+    furi_mutex_release(g_background_switch_mutex);
+
     current_backbuffer = next_backbuffer;
     if(view != nullptr) {
         view_commit_model(view, true);
     }
-
-    furi_thread_yield();
 }
 
 extern "C" int32_t mode7_demo_app(void* p) {
     UNUSED(p);
 
+    g_background_switch_mutex = furi_mutex_alloc(FuriMutexTypeNormal);
     reload_background();
 
     furi_timer_set_thread_priority(FuriTimerThreadPriorityElevated);
@@ -210,10 +223,6 @@ extern "C" int32_t mode7_demo_app(void* p) {
     view_dispatcher_enable_queue(view_dispatcher);
     view_dispatcher_attach_to_gui(view_dispatcher, gui, ViewDispatcherTypeFullscreen);
 
-    // This causes the issue unless the timer thread priority is bumped up
-    view_dispatcher_set_tick_event_callback(
-        view_dispatcher, tick_callback, furi_kernel_get_tick_frequency() / 60);
-
     View* test_view = view_alloc();
     view_set_previous_callback(test_view, exit_app);
     view_set_draw_callback(test_view, draw_test_checkerboard);
@@ -224,7 +233,13 @@ extern "C" int32_t mode7_demo_app(void* p) {
     view_dispatcher_add_view(view_dispatcher, MAIN_VIEW, test_view);
     view_dispatcher_switch_to_view(view_dispatcher, MAIN_VIEW);
 
+    FuriTimer* tick_timer = furi_timer_alloc(tick_callback, FuriTimerTypePeriodic, test_view);
+    furi_timer_start(tick_timer, furi_kernel_get_tick_frequency() / 60);
+
     view_dispatcher_run(view_dispatcher);
+
+    furi_timer_stop(tick_timer);
+    furi_timer_free(tick_timer);
 
     view_dispatcher_remove_view(view_dispatcher, MAIN_VIEW);
     view_free(test_view);
@@ -242,6 +257,7 @@ extern "C" int32_t mode7_demo_app(void* p) {
     furi_timer_set_thread_priority(FuriTimerThreadPriorityNormal);
 
     pbm_free(g_current_background_pbm);
+    furi_mutex_free(g_background_switch_mutex);
 
     return 0;
 }
