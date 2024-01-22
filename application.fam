@@ -5,7 +5,7 @@ App(
     name="Mode 7 Demo",  # Displayed in menus
     apptype=FlipperAppType.EXTERNAL,
     entry_point="mode7_demo_app",
-    stack_size=1 * 1024,
+    stack_size=2 * 1024,
     fap_category="Examples",
     requires=[
         "gui", "storage"

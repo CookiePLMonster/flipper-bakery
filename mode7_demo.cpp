@@ -5,7 +5,11 @@
 #include <gui/view_dispatcher.h>
 #include <storage/storage.h>
 
+#include <toolbox/stream/file_stream.h>
+
 #include "util/pbm.h"
+
+#include <cinttypes>
 
 #include <array>
 #include <utility>
@@ -31,6 +35,9 @@ static float g_offset_x = 0.0f;
 static float g_offset_y = 0.0f;
 static int16_t g_rotation = 0;
 
+static int16_t g_scale_x = 16;
+static int16_t g_scale_y = 16;
+
 static FuriMutex* g_background_switch_mutex;
 
 static uint8_t g_current_background_id = 0;
@@ -40,7 +47,7 @@ static const char* g_backgrounds[] = {
     APP_ASSETS_PATH("floor.pbm"),
     APP_ASSETS_PATH("grid.pbm"),
     APP_ASSETS_PATH("cookie_monster.pbm"),
-};
+    EXT_PATH("mode7_demo/background.pbm")};
 
 static uint8_t* screen_buffer_space;
 static uint8_t* back_buffer[2];
@@ -61,10 +68,43 @@ static void reload_background() {
     }
 
     Storage* storage = static_cast<Storage*>(furi_record_open(RECORD_STORAGE));
+
     g_current_background_pbm = pbm_load_file(storage, g_backgrounds[g_current_background_id]);
+    if(g_current_background_pbm == nullptr) {
+        // Try the other backgrounds, give up if none of them work (this shouldn't be the case ever)
+        const uint8_t last_background_id = g_current_background_id;
+        do {
+            g_current_background_id = (g_current_background_id + 1) % std::size(g_backgrounds);
+            if(g_current_background_id == last_background_id) {
+                furi_crash();
+            }
+            g_current_background_pbm =
+                pbm_load_file(storage, g_backgrounds[g_current_background_id]);
+        } while(g_current_background_pbm == nullptr);
+    }
     furi_record_close(RECORD_STORAGE);
 
     furi_mutex_release(g_background_switch_mutex);
+}
+
+static void load_scales() {
+    Storage* storage = static_cast<Storage*>(furi_record_open(RECORD_STORAGE));
+    Stream* file_stream = file_stream_alloc(storage);
+    if(file_stream_open(
+           file_stream, EXT_PATH("mode7_demo/scales.txt"), FSAM_READ, FSOM_OPEN_EXISTING)) {
+        FuriString* line_string = furi_string_alloc();
+        if(stream_read_line(file_stream, line_string)) {
+            g_scale_x = 1;
+            g_scale_y = 1;
+            sscanf(
+                furi_string_get_cstr(line_string), "%" SCNi16 " %" SCNi16, &g_scale_x, &g_scale_y);
+        }
+        furi_string_free(line_string);
+    }
+    file_stream_close(file_stream);
+
+    stream_free(file_stream);
+    furi_record_close(RECORD_STORAGE);
 }
 
 static void draw_test_checkerboard(Canvas* canvas, void* model) {
@@ -187,8 +227,8 @@ static void tick_callback(void* context) {
 
             screen_bitmap[dy * 128 + dx] = sample_background(
                 background_bitmap,
-                (rsx * 16) + g_offset_x,
-                (rsy * 16) + g_offset_y,
+                (rsx * g_scale_x) + g_offset_x,
+                (rsy * g_scale_y) + g_offset_y,
                 background_pitch,
                 background_width,
                 background_height);
@@ -208,6 +248,7 @@ extern "C" int32_t mode7_demo_app(void* p) {
 
     g_background_switch_mutex = furi_mutex_alloc(FuriMutexTypeNormal);
     reload_background();
+    load_scales();
 
     furi_timer_set_thread_priority(FuriTimerThreadPriorityElevated);
 
