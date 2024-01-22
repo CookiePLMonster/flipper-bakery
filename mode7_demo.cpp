@@ -7,6 +7,7 @@
 
 #include "util/pbm.h"
 
+#include <array>
 #include <utility>
 
 #define TAG "Mode7"
@@ -30,7 +31,14 @@ static float g_offset_x = 0.0f;
 static float g_offset_y = 0.0f;
 static int16_t g_rotation = 0;
 
-static Pbm* test_file;
+static uint8_t g_current_background_id = 0;
+static Pbm* g_current_background_pbm;
+
+static const char* g_backgrounds[] = {
+    APP_ASSETS_PATH("floor.pbm"),
+    APP_ASSETS_PATH("grid.pbm"),
+    APP_ASSETS_PATH("cookie_monster.pbm"),
+};
 
 static uint8_t* screen_buffer_space;
 static uint8_t* back_buffer[2];
@@ -40,6 +48,16 @@ static FuriEventFlag* presentation_flag;
 
 static double g_fps = 0.0;
 static uint32_t g_last_tick_time;
+
+static void reload_background() {
+    if(g_current_background_pbm != nullptr) {
+        pbm_free(g_current_background_pbm);
+    }
+
+    Storage* storage = static_cast<Storage*>(furi_record_open(RECORD_STORAGE));
+    g_current_background_pbm = pbm_load_file(storage, g_backgrounds[g_current_background_id]);
+    furi_record_close(RECORD_STORAGE);
+}
 
 static void draw_test_checkerboard(Canvas* canvas, void* model) {
     UNUSED(model);
@@ -56,29 +74,15 @@ static void draw_test_checkerboard(Canvas* canvas, void* model) {
     furi_string_free(fps_text);
 }
 
-/*static bool input_callback(InputEvent* event, void* context) {
+static bool input_callback(InputEvent* event, void* context) {
     UNUSED(context);
-    if(event->type == InputTypePress || event->type == InputTypeRepeat) {
-        if(event->key == InputKeyUp) {
-            g_offset_y--;
-            return true;
-        }
-        if(event->key == InputKeyDown) {
-            g_offset_y++;
-            return true;
-        }
-
-        if(event->key == InputKeyLeft) {
-            g_offset_x--;
-            return true;
-        }
-        if(event->key == InputKeyRight) {
-            g_offset_x++;
-            return true;
-        }
+    if(event->key == InputKeyBack && event->type == InputTypeShort) {
+        g_current_background_id = (g_current_background_id + 1) % std::size(g_backgrounds);
+        reload_background();
+        return true;
     }
     return false;
-}*/
+}
 
 static int mod(int x, int divisor) {
     int m = x % divisor;
@@ -138,10 +142,10 @@ static void tick_callback(void* context) {
     const uint8_t next_backbuffer = (current_backbuffer + 1) % 2;
 
     // "Rasterize" the background
-    const int32_t background_width = test_file->width;
-    const uint32_t background_pitch = pbm_get_pitch(test_file);
-    const int32_t background_height = test_file->height;
-    const uint32_t* background_bitmap = BIT_BAND_ALIAS(test_file->bitmap);
+    const int32_t background_width = g_current_background_pbm->width;
+    const uint32_t background_pitch = pbm_get_pitch(g_current_background_pbm);
+    const int32_t background_height = g_current_background_pbm->height;
+    const uint32_t* background_bitmap = BIT_BAND_ALIAS(g_current_background_pbm->bitmap);
 
     float angle_sin, angle_cos;
     sincosf((g_rotation * M_PI) / 180.0f, &angle_sin, &angle_cos);
@@ -190,9 +194,7 @@ static void tick_callback(void* context) {
 extern "C" int32_t mode7_demo_app(void* p) {
     UNUSED(p);
 
-    Storage* storage = static_cast<Storage*>(furi_record_open(RECORD_STORAGE));
-    test_file = pbm_load_file(storage, APP_ASSETS_PATH("floor.pbm"));
-    furi_record_close(RECORD_STORAGE);
+    reload_background();
 
     furi_timer_set_thread_priority(FuriTimerThreadPriorityElevated);
 
@@ -203,7 +205,6 @@ extern "C" int32_t mode7_demo_app(void* p) {
     back_buffer[1] = screen_buffer_space + (16 * 64);
 
     Gui* gui = static_cast<Gui*>(furi_record_open(RECORD_GUI));
-    UNUSED(gui);
 
     ViewDispatcher* view_dispatcher = view_dispatcher_alloc();
     view_dispatcher_enable_queue(view_dispatcher);
@@ -216,21 +217,15 @@ extern "C" int32_t mode7_demo_app(void* p) {
     View* test_view = view_alloc();
     view_set_previous_callback(test_view, exit_app);
     view_set_draw_callback(test_view, draw_test_checkerboard);
-    //view_set_input_callback(test_view, input_callback);
+    view_set_input_callback(test_view, input_callback);
 
     view_dispatcher_set_event_callback_context(view_dispatcher, test_view);
 
     view_dispatcher_add_view(view_dispatcher, MAIN_VIEW, test_view);
     view_dispatcher_switch_to_view(view_dispatcher, MAIN_VIEW);
 
-    // The timer interval of 1 causes issues - possibly starves all the other timers, incl. the input timer
-    //FuriTimer* tick_timer = furi_timer_alloc(tick_callback, FuriTimerTypePeriodic, test_view);
-    //furi_timer_start(tick_timer, 1);
-
     view_dispatcher_run(view_dispatcher);
 
-    //furi_timer_stop(tick_timer);
-    //furi_timer_free(tick_timer);
     view_dispatcher_remove_view(view_dispatcher, MAIN_VIEW);
     view_free(test_view);
     view_dispatcher_free(view_dispatcher);
@@ -246,7 +241,7 @@ extern "C" int32_t mode7_demo_app(void* p) {
 
     furi_timer_set_thread_priority(FuriTimerThreadPriorityNormal);
 
-    pbm_free(test_file);
+    pbm_free(g_current_background_pbm);
 
     return 0;
 }
