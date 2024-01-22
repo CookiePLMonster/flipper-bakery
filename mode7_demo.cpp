@@ -20,7 +20,7 @@ static constexpr uint32_t MAIN_VIEW = 0;
 static constexpr int16_t SCREEN_WIDTH = 128;
 static constexpr int16_t SCREEN_HEIGHT = 64;
 static constexpr int16_t EYE_DISTANCE = 32;
-static constexpr int16_t HORIZON = 20;
+static constexpr int16_t HORIZON = 10;
 static constexpr uint8_t TILE_SIZE = 8;
 
 static uint32_t exit_app(void*) {
@@ -30,6 +30,7 @@ static uint32_t exit_app(void*) {
 
 static int16_t g_offset_x = 0;
 static int16_t g_offset_y = 0;
+static int16_t g_rotation = 0;
 
 static Pbm* test_file;
 
@@ -72,6 +73,25 @@ static void draw_test_checkerboard(Canvas* canvas, void* model) {
     return false;
 }*/
 
+static int mod(int x, int divisor) {
+    int m = x % divisor;
+    return m + ((m >> 31) & divisor);
+}
+
+static uint32_t sample_background(
+    const uint32_t* bitmap,
+    int32_t sample_x,
+    int32_t sample_y,
+    uint32_t pitch,
+    int32_t width,
+    int32_t height) {
+    // Repeat mode for now
+    sample_x = mod(sample_x, width);
+    sample_y = mod(sample_y, height);
+
+    return bitmap[sample_y * pitch + sample_x];
+}
+
 static void tick_callback(void* context) {
     View* view = static_cast<View*>(context);
 
@@ -87,6 +107,10 @@ static void tick_callback(void* context) {
         g_offset_y--;
     }
 
+    if(furi_hal_gpio_read(&gpio_button_ok)) {
+        g_rotation = (g_rotation + 2) % 360;
+    }
+
     const uint8_t next_backbuffer = (current_backbuffer + 1) % 2;
 
     // "Rasterize" the background
@@ -94,6 +118,9 @@ static void tick_callback(void* context) {
     const uint32_t background_pitch = pbm_get_pitch(test_file);
     const int32_t background_height = test_file->height;
     const uint32_t* background_bitmap = BIT_BAND_ALIAS(test_file->bitmap);
+
+    float angle_sin, angle_cos;
+    sincosf((g_rotation * M_PI) / 180.0f, &angle_sin, &angle_cos);
 
     furi_event_flag_wait(
         presentation_flag,
@@ -105,7 +132,7 @@ static void tick_callback(void* context) {
     // This is "slow" but simulates how backgrounds are rasterized. Use it for now.
     // This method also allows for easy repeat modes
     uint32_t* screen_bitmap = BIT_BAND_ALIAS(back_buffer[next_backbuffer]);
-    for(int32_t y = -SCREEN_HEIGHT / 2; y < SCREEN_HEIGHT / 2; ++y) {
+    for(int32_t y = -HORIZON + 1; y < SCREEN_HEIGHT / 2; ++y) {
         for(int32_t x = -SCREEN_WIDTH / 2; x < SCREEN_WIDTH / 2; ++x) {
             int32_t dx = x + (SCREEN_WIDTH / 2);
             int32_t dy = y + (SCREEN_HEIGHT / 2);
@@ -116,14 +143,19 @@ static void tick_callback(void* context) {
 
             float sx = static_cast<float>(px) / pz;
             float sy = static_cast<float>(py) / -pz;
+            float rsx = sx * angle_cos - sy * angle_sin;
+            float rsy = sx * angle_sin + sy * angle_cos;
 
-            int32_t sampled_x = (sx * background_width) + g_offset_x;
-            int32_t sampled_y = (sy * background_height) + g_offset_y;
-            if(sampled_x >= 0 && sampled_x < background_width && sampled_y >= 0 &&
-               sampled_y < background_height) {
-                screen_bitmap[dy * 128 + dx] =
-                    background_bitmap[(sampled_y * background_pitch) + sampled_x];
-            }
+            float move_x = g_offset_x * angle_cos - g_offset_y * angle_sin;
+            float move_y = g_offset_x * angle_sin + g_offset_y * angle_cos;
+
+            screen_bitmap[dy * 128 + dx] = sample_background(
+                background_bitmap,
+                (rsx * background_width) + move_x,
+                (rsy * background_height) + move_y,
+                background_pitch,
+                background_width,
+                background_height);
         }
     }
 
@@ -137,7 +169,7 @@ extern "C" int32_t mode7_demo_app(void* p) {
     UNUSED(p);
 
     Storage* storage = static_cast<Storage*>(furi_record_open(RECORD_STORAGE));
-    test_file = pbm_load_file(storage, APP_ASSETS_PATH("cookie_monster.pbm"));
+    test_file = pbm_load_file(storage, APP_ASSETS_PATH("floor.pbm"));
     furi_record_close(RECORD_STORAGE);
 
     g_offset_x = 64; //64 - (test_file->width / 2);
