@@ -1,11 +1,17 @@
 name: "FAP: Build for multiple SDK sources and lint"
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  schedule:
+    # do a build every day
+    - cron: "0 3 * * *"
 
 jobs:
   lint-sources:
     runs-on: ubuntu-latest
     name: 'ufbt: Lint sources'
+    if: github.event_name != 'schedule'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
