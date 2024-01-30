@@ -253,7 +253,7 @@ extern "C" int32_t mode7_demo_app(void* p) {
     furi_timer_set_thread_priority(FuriTimerThreadPriorityElevated);
 
     presentation_flag = furi_event_flag_alloc();
-    furi_event_flag_set(presentation_flag, 0xFFFFFFFFu);
+    furi_event_flag_set(presentation_flag, 0b11u);
     screen_buffer_space = static_cast<uint8_t*>(malloc(16 * 64 * 2));
     back_buffer[0] = screen_buffer_space;
     back_buffer[1] = screen_buffer_space + (16 * 64);
@@ -291,7 +291,7 @@ extern "C" int32_t mode7_demo_app(void* p) {
     // This shouldn't be needed, but I was getting an use-after-free when freeing
     // the screen buffers - possibly the draw callback is still running after freeing the view?
     // Just in case, wait for all buffer accesses to finish
-    furi_event_flag_wait(presentation_flag, 0xFFFFFFFFu, FuriFlagWaitAll, FuriWaitForever);
+    furi_event_flag_wait(presentation_flag, 0b11u, FuriFlagWaitAll, FuriWaitForever);
     free(screen_buffer_space);
     furi_event_flag_free(presentation_flag);
 
