@@ -51,12 +51,11 @@ static const char* g_backgrounds[] = {
 
 static uint8_t* screen_buffer_space;
 static uint8_t* back_buffer[2];
-static uint8_t current_backbuffer = 0;
 
-static FuriEventFlag* presentation_flag;
+static FuriMutex* g_presentation_mutex;
 
 static double g_fps = 0.0;
-static uint32_t g_last_tick_time;
+static uint32_t g_last_time;
 
 static void reload_background() {
     if(furi_mutex_acquire(g_background_switch_mutex, FuriWaitForever) != FuriStatusOk) {
@@ -110,12 +109,12 @@ static void load_scales() {
 static void draw_test_checkerboard(Canvas* canvas, void* model) {
     UNUSED(model);
 
-    const uint8_t buffer_to_use = current_backbuffer;
-    furi_event_flag_clear(presentation_flag, 1 << buffer_to_use);
+    const uint8_t buffer_to_use = 0;
+    furi_mutex_acquire(g_presentation_mutex, FuriWaitForever);
     canvas_draw_xbm(canvas, 0, 0, 128, 64, back_buffer[buffer_to_use]);
-    furi_event_flag_set(presentation_flag, 1 << buffer_to_use);
 
-    FuriString* fps_text = furi_string_alloc_printf("%0.f", g_fps);
+    FuriString* fps_text = furi_string_alloc_printf("%.1f", g_fps);
+    furi_mutex_release(g_presentation_mutex);
     canvas_set_font(canvas, FontSecondary);
     canvas_draw_str_aligned(
         canvas, 124, 8, AlignRight, AlignBottom, furi_string_get_cstr(fps_text));
@@ -179,24 +178,20 @@ static void handle_inputs() {
 static void tick_callback(void* context) {
     View* view = static_cast<View*>(context);
 
-    const uint32_t current_tick = furi_get_tick();
-    const uint32_t last_tick = std::exchange(g_last_tick_time, current_tick);
+    const uint32_t current_time = DWT->CYCCNT;
+    const uint32_t last_time = std::exchange(g_last_time, current_time);
 
-    const uint32_t tick_delta = (current_tick - last_tick) * 1000;
-    g_fps = 1000.0 / (tick_delta / furi_kernel_get_tick_frequency());
+    const uint32_t tick_delta = current_time - last_time;
+    g_fps = (float)SystemCoreClock / tick_delta;
 
     handle_inputs();
 
-    const uint8_t next_backbuffer = (current_backbuffer + 1) % 2;
+    const uint8_t next_backbuffer = 0;
 
     float angle_sin, angle_cos;
     sincosf((g_rotation * M_PI) / 180.0f, &angle_sin, &angle_cos);
 
-    furi_event_flag_wait(
-        presentation_flag,
-        1 << next_backbuffer,
-        FuriFlagWaitAny | FuriFlagNoClear,
-        FuriWaitForever);
+    furi_mutex_acquire(g_presentation_mutex, FuriWaitForever);
 
     if(furi_mutex_acquire(g_background_switch_mutex, FuriWaitForever) != FuriStatusOk) {
         return;
@@ -236,8 +231,8 @@ static void tick_callback(void* context) {
     }
 
     furi_mutex_release(g_background_switch_mutex);
+    furi_mutex_release(g_presentation_mutex);
 
-    current_backbuffer = next_backbuffer;
     if(view != nullptr) {
         view_commit_model(view, true);
     }
@@ -252,8 +247,7 @@ extern "C" int32_t mode7_demo_app(void* p) {
 
     furi_timer_set_thread_priority(FuriTimerThreadPriorityElevated);
 
-    presentation_flag = furi_event_flag_alloc();
-    furi_event_flag_set(presentation_flag, 0b11u);
+    g_presentation_mutex = furi_mutex_alloc(FuriMutexTypeNormal);
     screen_buffer_space = static_cast<uint8_t*>(malloc(16 * 64 * 2));
     back_buffer[0] = screen_buffer_space;
     back_buffer[1] = screen_buffer_space + (16 * 64);
@@ -288,12 +282,8 @@ extern "C" int32_t mode7_demo_app(void* p) {
 
     furi_record_close(RECORD_GUI);
 
-    // This shouldn't be needed, but I was getting an use-after-free when freeing
-    // the screen buffers - possibly the draw callback is still running after freeing the view?
-    // Just in case, wait for all buffer accesses to finish
-    furi_event_flag_wait(presentation_flag, 0b11u, FuriFlagWaitAll, FuriWaitForever);
     free(screen_buffer_space);
-    furi_event_flag_free(presentation_flag);
+    furi_mutex_free(g_presentation_mutex);
 
     furi_timer_set_thread_priority(FuriTimerThreadPriorityNormal);
 
