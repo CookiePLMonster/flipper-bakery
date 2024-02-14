@@ -14,6 +14,8 @@
 #include <array>
 #include <utility>
 
+#include "engine/game_engine.h"
+
 #define TAG "Mode7"
 
 // This is simplified compared to the "traditional" bit band alias access, since we only occupy the bottom 256KB of SRAM anyway
@@ -27,18 +29,12 @@ static constexpr int16_t SCREEN_HEIGHT = 64;
 static constexpr int16_t EYE_DISTANCE = 150;
 static constexpr int16_t HORIZON = 15;
 
-static uint32_t exit_app(void*) {
-    return VIEW_NONE;
-}
-
 static float g_offset_x = 0.0f;
 static float g_offset_y = 0.0f;
 static int16_t g_rotation = 0;
 
 static int16_t g_scale_x = 16;
 static int16_t g_scale_y = 16;
-
-static FuriMutex* g_background_switch_mutex;
 
 static uint8_t g_current_background_id = 0;
 static Pbm* g_current_background_pbm;
@@ -49,20 +45,9 @@ static const char* g_backgrounds[] = {
     APP_ASSETS_PATH("cookie_monster.pbm"),
     EXT_PATH("mode7_demo/background.pbm")};
 
-static uint8_t* screen_buffer_space;
-static uint8_t* back_buffer[2];
-static uint8_t current_backbuffer = 0;
-
-static FuriEventFlag* presentation_flag;
-
-static double g_fps = 0.0;
-static uint32_t g_last_tick_time;
+static uint8_t* screen_buffer;
 
 static void reload_background() {
-    if(furi_mutex_acquire(g_background_switch_mutex, FuriWaitForever) != FuriStatusOk) {
-        return;
-    }
-
     if(g_current_background_pbm != nullptr) {
         pbm_free(g_current_background_pbm);
     }
@@ -83,8 +68,6 @@ static void reload_background() {
         } while(g_current_background_pbm == nullptr);
     }
     furi_record_close(RECORD_STORAGE);
-
-    furi_mutex_release(g_background_switch_mutex);
 }
 
 static void load_scales() {
@@ -107,31 +90,6 @@ static void load_scales() {
     furi_record_close(RECORD_STORAGE);
 }
 
-static void draw_test_checkerboard(Canvas* canvas, void* model) {
-    UNUSED(model);
-
-    const uint8_t buffer_to_use = current_backbuffer;
-    furi_event_flag_clear(presentation_flag, 1 << buffer_to_use);
-    canvas_draw_xbm(canvas, 0, 0, 128, 64, back_buffer[buffer_to_use]);
-    furi_event_flag_set(presentation_flag, 1 << buffer_to_use);
-
-    FuriString* fps_text = furi_string_alloc_printf("%0.f", g_fps);
-    canvas_set_font(canvas, FontSecondary);
-    canvas_draw_str_aligned(
-        canvas, 124, 8, AlignRight, AlignBottom, furi_string_get_cstr(fps_text));
-    furi_string_free(fps_text);
-}
-
-static bool input_callback(InputEvent* event, void* context) {
-    UNUSED(context);
-    if(event->key == InputKeyBack && event->type == InputTypeShort) {
-        g_current_background_id = (g_current_background_id + 1) % std::size(g_backgrounds);
-        reload_background();
-        return true;
-    }
-    return false;
-}
-
 static int mod(int x, int divisor) {
     int m = x % divisor;
     return m + ((m >> 31) & divisor);
@@ -151,18 +109,18 @@ static uint32_t sample_background(
     return bitmap[sample_y * pitch + sample_x];
 }
 
-static void handle_inputs() {
+static void handle_inputs(const InputState* input) {
     // TODO: This should react to events and cache the input buttons state, not this
     float x = 0.0f, y = 0.0f;
 
-    if(!furi_hal_gpio_read(&gpio_button_right)) {
+    if((input->held & GameKeyRight) != 0) {
         x++;
-    } else if(!furi_hal_gpio_read(&gpio_button_left)) {
+    } else if((input->held & GameKeyLeft) != 0) {
         x--;
     }
-    if(!furi_hal_gpio_read(&gpio_button_down)) {
+    if((input->held & GameKeyDown) != 0) {
         y++;
-    } else if(!furi_hal_gpio_read(&gpio_button_up)) {
+    } else if((input->held & GameKeyUp) != 0) {
         y--;
     }
 
@@ -171,36 +129,25 @@ static void handle_inputs() {
     g_offset_x += x * angle_cos - y * angle_sin;
     g_offset_y += x * angle_sin + y * angle_cos;
 
-    if(furi_hal_gpio_read(&gpio_button_ok)) {
+    if((input->held & GameKeyOk) != 0) {
         g_rotation = (g_rotation + 1) % 360;
+    }
+
+    if((input->pressed & GameKeyBack) != 0) {
+        g_current_background_id = (g_current_background_id + 1) % std::size(g_backgrounds);
+        reload_background();
     }
 }
 
-static void tick_callback(void* context) {
-    View* view = static_cast<View*>(context);
+static void frame_cb(GameEngine* engine, Canvas* canvas, InputState input, void* context) {
+    UNUSED(engine);
+    UNUSED(canvas);
+    UNUSED(context);
 
-    const uint32_t current_tick = furi_get_tick();
-    const uint32_t last_tick = std::exchange(g_last_tick_time, current_tick);
-
-    const uint32_t tick_delta = (current_tick - last_tick) * 1000;
-    g_fps = 1000.0 / (tick_delta / furi_kernel_get_tick_frequency());
-
-    handle_inputs();
-
-    const uint8_t next_backbuffer = (current_backbuffer + 1) % 2;
+    handle_inputs(&input);
 
     float angle_sin, angle_cos;
     sincosf((g_rotation * M_PI) / 180.0f, &angle_sin, &angle_cos);
-
-    furi_event_flag_wait(
-        presentation_flag,
-        1 << next_backbuffer,
-        FuriFlagWaitAny | FuriFlagNoClear,
-        FuriWaitForever);
-
-    if(furi_mutex_acquire(g_background_switch_mutex, FuriWaitForever) != FuriStatusOk) {
-        return;
-    }
 
     // "Rasterize" the background
     const int32_t background_width = g_current_background_pbm->width;
@@ -210,7 +157,7 @@ static void tick_callback(void* context) {
 
     // This is "slow" but simulates how backgrounds are rasterized. Use it for now.
     // This method also allows for easy repeat modes
-    uint32_t* screen_bitmap = BIT_BAND_ALIAS(back_buffer[next_backbuffer]);
+    uint32_t* screen_bitmap = BIT_BAND_ALIAS(screen_buffer);
     for(int32_t y = -HORIZON + 1; y < SCREEN_HEIGHT / 2; ++y) {
         for(int32_t x = -SCREEN_WIDTH / 2; x < SCREEN_WIDTH / 2; ++x) {
             int32_t dx = x + (SCREEN_WIDTH / 2);
@@ -235,70 +182,28 @@ static void tick_callback(void* context) {
         }
     }
 
-    furi_mutex_release(g_background_switch_mutex);
-
-    current_backbuffer = next_backbuffer;
-    if(view != nullptr) {
-        view_commit_model(view, true);
-    }
+    canvas_draw_xbm(canvas, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, screen_buffer);
 }
 
 extern "C" int32_t mode7_demo_app(void* p) {
     UNUSED(p);
 
-    g_background_switch_mutex = furi_mutex_alloc(FuriMutexTypeNormal);
     reload_background();
     load_scales();
 
-    furi_timer_set_thread_priority(FuriTimerThreadPriorityElevated);
+    GameEngineSettings settings = game_engine_settings_init();
+    settings.target_fps = 60;
+    settings.show_fps = true;
+    settings.always_backlight = true;
+    settings.frame_callback = frame_cb;
+    settings.context = NULL;
 
-    presentation_flag = furi_event_flag_alloc();
-    furi_event_flag_set(presentation_flag, 0b11u);
-    screen_buffer_space = static_cast<uint8_t*>(malloc(16 * 64 * 2));
-    back_buffer[0] = screen_buffer_space;
-    back_buffer[1] = screen_buffer_space + (16 * 64);
+    screen_buffer = static_cast<uint8_t*>(malloc(16 * 64));
+    GameEngine* engine = game_engine_alloc(settings);
 
-    Gui* gui = static_cast<Gui*>(furi_record_open(RECORD_GUI));
-
-    ViewDispatcher* view_dispatcher = view_dispatcher_alloc();
-    view_dispatcher_enable_queue(view_dispatcher);
-    view_dispatcher_attach_to_gui(view_dispatcher, gui, ViewDispatcherTypeFullscreen);
-
-    View* test_view = view_alloc();
-    view_set_previous_callback(test_view, exit_app);
-    view_set_draw_callback(test_view, draw_test_checkerboard);
-    view_set_input_callback(test_view, input_callback);
-
-    view_dispatcher_set_event_callback_context(view_dispatcher, test_view);
-
-    view_dispatcher_add_view(view_dispatcher, MAIN_VIEW, test_view);
-    view_dispatcher_switch_to_view(view_dispatcher, MAIN_VIEW);
-
-    FuriTimer* tick_timer = furi_timer_alloc(tick_callback, FuriTimerTypePeriodic, test_view);
-    furi_timer_start(tick_timer, furi_kernel_get_tick_frequency() / 60);
-
-    view_dispatcher_run(view_dispatcher);
-
-    furi_timer_stop(tick_timer);
-    furi_timer_free(tick_timer);
-
-    view_dispatcher_remove_view(view_dispatcher, MAIN_VIEW);
-    view_free(test_view);
-    view_dispatcher_free(view_dispatcher);
-
-    furi_record_close(RECORD_GUI);
-
-    // This shouldn't be needed, but I was getting an use-after-free when freeing
-    // the screen buffers - possibly the draw callback is still running after freeing the view?
-    // Just in case, wait for all buffer accesses to finish
-    furi_event_flag_wait(presentation_flag, 0b11u, FuriFlagWaitAll, FuriWaitForever);
-    free(screen_buffer_space);
-    furi_event_flag_free(presentation_flag);
-
-    furi_timer_set_thread_priority(FuriTimerThreadPriorityNormal);
-
-    pbm_free(g_current_background_pbm);
-    furi_mutex_free(g_background_switch_mutex);
+    game_engine_run(engine);
+    game_engine_free(engine);
+    free(screen_buffer);
 
     return 0;
 }
