@@ -1,0 +1,14 @@
+App(
+    appid="digital_clock",
+    name="Digital Clock",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="digital_clock_app",
+    stack_size=1 * 1024,
+    fap_category="Tools",
+
+    fap_version="0.1",
+    fap_icon="digital_clock.png",  # 10x10 1-bit PNG
+    fap_description="7-segment display-digital clock with alarms",
+    fap_author="Silent",
+    fap_weburl="https://github.com/CookiePLMonster/flipper-bakery/digital_clock",
+)

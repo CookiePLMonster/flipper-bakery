@@ -1,7 +1,9 @@
 */dist/*
+*/.gitignore
 .vscode
 .clang-format
 .clangd
 .editorconfig
 .env
 .ufbt
+*.code-workspace

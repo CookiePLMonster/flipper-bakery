@@ -15,6 +15,6 @@ App(
     fap_icon="mode7_demo.png",  # 10x10 1-bit PNG
     fap_description="A demo of pseudo-3D Mode 7 rendering",
     fap_author="Silent",
-    fap_weburl="https://github.com/CookiePLMonster/flipper-mode7-demo",
+    fap_weburl="https://github.com/CookiePLMonster/flipper-bakery/mode7_demo",
     fap_file_assets="assets",
 )
