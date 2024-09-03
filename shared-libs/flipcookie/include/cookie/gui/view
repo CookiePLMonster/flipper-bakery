@@ -1,0 +1,25 @@
+#pragma once
+
+#include <furi/core/common_defines.h>
+#include <gui/view.h>
+
+#include <cookie/furi_ptr>
+
+namespace cookie {
+
+namespace details::view {
+struct allocator {
+    FURI_ALWAYS_INLINE ::View* operator()() const {
+        return ::view_alloc();
+    }
+};
+
+struct deleter {
+    FURI_ALWAYS_INLINE void operator()(::View* p) const {
+        ::view_free(p);
+    }
+};
+};
+
+using View = furi_ptr<::View, details::view::allocator, details::view::deleter>;
+};

@@ -1,0 +1,9 @@
+#pragma once
+
+#include <furi/core/common_defines.h>
+
+// Function to allow passing C++11 enum classes as Furi uint32_t parameters
+template <typename T>
+FURI_ALWAYS_INLINE constexpr uint32_t FuriEnumParam(T val) {
+    return static_cast<uint32_t>(val);
+}

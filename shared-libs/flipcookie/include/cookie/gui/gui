@@ -1,0 +1,26 @@
+#pragma once
+
+#include <furi/core/common_defines.h>
+#include <gui/gui.h>
+
+#include <cookie/furi_ptr>
+
+namespace cookie {
+
+namespace details::gui {
+struct allocator {
+    FURI_ALWAYS_INLINE ::Gui* operator()() const {
+        return reinterpret_cast<::Gui*>(::furi_record_open(RECORD_GUI));
+    }
+};
+
+struct deleter {
+    FURI_ALWAYS_INLINE void operator()(::Gui* p) const {
+        UNUSED(p);
+        ::furi_record_close(RECORD_GUI);
+    }
+};
+};
+
+using Gui = furi_ptr<::Gui, details::gui::allocator, details::gui::deleter>;
+};

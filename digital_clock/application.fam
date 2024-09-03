@@ -11,4 +11,11 @@ App(
     fap_description="7-segment display-digital clock with alarms",
     fap_author="Silent",
     fap_weburl="https://github.com/CookiePLMonster/flipper-bakery/digital_clock",
+
+    fap_private_libs=[
+            Lib(
+                name="flipcookie",
+                fap_include_paths=["include"],
+            )
+        ],
 )

@@ -1,9 +1,12 @@
 #include <furi.h>
 
+#include "digital_clock_app.hpp"
+
 extern "C" int32_t digital_clock_app(void* p) {
     UNUSED(p);
-    FURI_LOG_I("TEST", "Hello world");
-    FURI_LOG_I("TEST", "I'm digital_clock!");
+
+    DigitalClockApp app;
+    app.Run();
 
     return 0;
 }

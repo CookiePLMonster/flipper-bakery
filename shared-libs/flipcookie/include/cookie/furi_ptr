@@ -1,0 +1,51 @@
+#pragma once
+
+#include <utility>
+
+namespace cookie {
+
+// Smart pointer that allocates and deallocates a Furi resource. Can never be null.
+// Cannot be copied or moved, since moving would leave the source as null.
+template <typename T, typename Alloc, typename Free>
+class furi_ptr {
+public:
+    using element_type = T;
+    using pointer = T*;
+
+    // Allocating constructor
+    FURI_ALWAYS_INLINE furi_ptr()
+        : m_ptr(Alloc()()) {
+    }
+
+    // Variadic constructor for Alloc functions that take parameters
+    template <typename... Args>
+    FURI_ALWAYS_INLINE explicit furi_ptr(Args&&... args)
+        : m_ptr(Alloc()(std::forward<Args>(args)...)) {
+    }
+
+    // Adopting constructor. Cannot be given null
+    FURI_ALWAYS_INLINE explicit furi_ptr(T* ptr)
+        : m_ptr(ptr) {
+        // TODO: cookie_debug_check
+    }
+
+    furi_ptr(const furi_ptr&) = delete;
+    furi_ptr(furi_ptr&&) = delete;
+
+    FURI_ALWAYS_INLINE ~furi_ptr() {
+        Free()(m_ptr);
+    }
+
+    FURI_ALWAYS_INLINE pointer get() const {
+        return m_ptr;
+    }
+
+    FURI_ALWAYS_INLINE pointer operator*() const {
+        return m_ptr;
+    }
+
+private:
+    pointer m_ptr;
+};
+
+};

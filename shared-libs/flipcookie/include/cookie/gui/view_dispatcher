@@ -1,0 +1,28 @@
+#pragma once
+
+#include <furi/core/common_defines.h>
+#include <gui/view_dispatcher.h>
+
+#include <cookie/furi_ptr>
+
+namespace cookie {
+
+namespace details::view_dispatcher {
+struct allocator {
+    FURI_ALWAYS_INLINE ::ViewDispatcher* operator()() const {
+        return ::view_dispatcher_alloc();
+    }
+};
+
+struct deleter {
+    FURI_ALWAYS_INLINE void operator()(::ViewDispatcher* p) const {
+        ::view_dispatcher_free(p);
+    }
+};
+};
+
+using ViewDispatcher = furi_ptr<
+    ::ViewDispatcher,
+    details::view_dispatcher::allocator,
+    details::view_dispatcher::deleter>;
+};

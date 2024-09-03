@@ -1,0 +1,27 @@
+#pragma once
+
+#include <furi/core/common_defines.h>
+#include <gui/scene_manager.h>
+
+#include <cookie/furi_ptr>
+
+namespace cookie {
+
+namespace details::scene_manager {
+struct allocator {
+    FURI_ALWAYS_INLINE ::SceneManager*
+        operator()(const SceneManagerHandlers& app_scene_handlers, void* context) const {
+        return ::scene_manager_alloc(&app_scene_handlers, context);
+    }
+};
+
+struct deleter {
+    FURI_ALWAYS_INLINE void operator()(::SceneManager* p) const {
+        ::scene_manager_free(p);
+    }
+};
+};
+
+using SceneManager =
+    furi_ptr<::SceneManager, details::scene_manager::allocator, details::scene_manager::deleter>;
+};
