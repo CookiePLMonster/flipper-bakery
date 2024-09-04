@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cookie/timer>
 #include <cookie/within>
 #include <cookie/gui/view>
+#include <cookie/gui/view_dispatcher>
 
 class DigitalClockApp;
 
@@ -16,9 +18,12 @@ public:
 private:
     struct Model {
         uint8_t hour, minute, second;
+        bool show_colon;
     };
 
     void OnEnter();
+    void OnExit();
+    void OnTimeUpdate();
     static void OnDraw(Canvas* canvas, const Model* model);
 
     // 7-segment-display routines and constants
@@ -33,4 +38,7 @@ private:
 
 private:
     cookie::View m_view;
+
+    // TODO: Use FuriEventLoopTimer when it's available
+    cookie::FuriTimer m_time_update_timer;
 };

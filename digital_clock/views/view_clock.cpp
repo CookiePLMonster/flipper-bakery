@@ -3,8 +3,19 @@
 #include "digital_clock_app.hpp"
 
 #include <gui/canvas.h>
+#include <lib/datetime/datetime.h>
+#include <furi_hal_rtc.h>
 
-DigitalClockView::DigitalClockView() {
+static constexpr uint32_t TIME_UPDATE_PERIOD_MS = 500;
+
+DigitalClockView::DigitalClockView()
+    : m_time_update_timer(
+          [](void* context) {
+              DigitalClockView* view = reinterpret_cast<DigitalClockView*>(context);
+              view->OnTimeUpdate();
+          },
+          FuriTimerTypePeriodic,
+          this) {
     cookie::view_emplace_model<Model>(*m_view);
 
     view_set_context(*m_view, this);
@@ -16,13 +27,32 @@ DigitalClockView::DigitalClockView() {
         DigitalClockView* view = reinterpret_cast<DigitalClockView*>(context);
         view->OnEnter();
     });
+    view_set_exit_callback(*m_view, [](void* context) {
+        DigitalClockView* view = reinterpret_cast<DigitalClockView*>(context);
+        view->OnExit();
+    });
 }
 
 void DigitalClockView::OnEnter() {
-    cookie::with_view_model(*m_view, [](Model& model) {
-        model.hour = 12;
-        model.minute = 88;
-        model.second = 56;
+    OnTimeUpdate();
+
+    furi_timer_start(*m_time_update_timer, furi_ms_to_ticks(TIME_UPDATE_PERIOD_MS));
+}
+
+void DigitalClockView::OnExit() {
+    furi_timer_stop(*m_time_update_timer);
+}
+
+void DigitalClockView::OnTimeUpdate() {
+    DateTime current_time;
+    furi_hal_rtc_get_datetime(&current_time);
+
+    cookie::with_view_model(*m_view, [&](Model& model) {
+        bool time_changed = false;
+        time_changed |= std::exchange(model.hour, current_time.hour) != current_time.hour;
+        time_changed |= std::exchange(model.minute, current_time.minute) != current_time.minute;
+        time_changed |= std::exchange(model.second, current_time.second) != current_time.second;
+        model.show_colon = time_changed;
     });
 }
 
@@ -48,12 +78,16 @@ void DigitalClockView::OnDraw(Canvas* canvas, const Model* model) {
 
     DrawSevenSegmentNumber(canvas, model->hour, cur_x, cur_y);
     cur_x += (DIGIT_SPACING * 2);
-    DrawColon(canvas, cur_x, cur_y);
+    if(model->show_colon) {
+        DrawColon(canvas, cur_x, cur_y);
+    }
     cur_x += COLON_GAP;
 
     DrawSevenSegmentNumber(canvas, model->minute, cur_x, cur_y);
     cur_x += (DIGIT_SPACING * 2);
-    DrawColon(canvas, cur_x, cur_y);
+    if(model->show_colon) {
+        DrawColon(canvas, cur_x, cur_y);
+    }
     cur_x += COLON_GAP;
 
     DrawSevenSegmentNumber(canvas, model->second, cur_x, cur_y);

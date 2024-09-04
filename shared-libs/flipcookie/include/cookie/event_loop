@@ -1,0 +1,33 @@
+#pragma once
+
+#include <furi/core/common_defines.h>
+#include <furi/core/event_loop.h>
+#include <furi/core/event_loop_timer.h>
+
+#include <cookie/furi_ptr>
+
+namespace cookie {
+
+namespace details::event_loop_timer {
+struct allocator {
+    FURI_ALWAYS_INLINE ::FuriEventLoopTimer* operator()(
+        ::FuriEventLoop* instance,
+        FuriEventLoopTimerCallback callback,
+        FuriEventLoopTimerType type,
+        void* context) const {
+        return ::furi_event_loop_timer_alloc(instance, callback, type, context);
+    }
+};
+
+struct deleter {
+    FURI_ALWAYS_INLINE void operator()(::FuriEventLoopTimer* p) const {
+        ::furi_event_loop_timer_free(p);
+    }
+};
+};
+
+using FuriEventLoopTimer = furi_ptr<
+    ::FuriEventLoopTimer,
+    details::event_loop_timer::allocator,
+    details::event_loop_timer::deleter>;
+};

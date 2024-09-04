@@ -1,0 +1,26 @@
+#pragma once
+
+#include <furi/core/common_defines.h>
+#include <furi/core/timer.h>
+
+#include <cookie/furi_ptr>
+
+namespace cookie {
+
+namespace details::timer {
+struct allocator {
+    FURI_ALWAYS_INLINE ::FuriTimer*
+        operator()(FuriTimerCallback func, FuriTimerType type, void* context) const {
+        return ::furi_timer_alloc(func, type, context);
+    }
+};
+
+struct deleter {
+    FURI_ALWAYS_INLINE void operator()(::FuriTimer* p) const {
+        ::furi_timer_free(p);
+    }
+};
+};
+
+using FuriTimer = furi_ptr<::FuriTimer, details::timer::allocator, details::timer::deleter>;
+};
