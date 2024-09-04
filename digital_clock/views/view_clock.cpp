@@ -33,8 +33,10 @@ static constexpr uint32_t HOR_SEGMENT_LENGTH = HOR_BOX_LENGTH + 2; // plus dots
 static constexpr uint32_t VERT_SEGMENT_LENGTH = VERT_BOX_LENGTH + 2;
 static constexpr uint32_t SEGMENT_SLANT = 1;
 static constexpr uint32_t SEGMENT_THICKNESS = 3;
+static constexpr uint32_t COLON_THICKNESS = 2;
 static constexpr uint32_t SEGMENT_NOTCH = 2;
 static constexpr uint32_t DIGIT_GAP = 4;
+static constexpr uint32_t COLON_GAP = DIGIT_GAP + 1;
 
 static constexpr uint32_t DIGIT_SPACING = HOR_SEGMENT_LENGTH + (DIGIT_GAP * 2);
 
@@ -45,10 +47,14 @@ void DigitalClockView::OnDraw(Canvas* canvas, const Model* model) {
     const uint32_t cur_y = 24;
 
     DrawSevenSegmentNumber(canvas, model->hour, cur_x, cur_y);
-    cur_x += (DIGIT_SPACING * 2) + 6; // TODO: space for :
+    cur_x += (DIGIT_SPACING * 2);
+    DrawColon(canvas, cur_x, cur_y);
+    cur_x += COLON_GAP;
 
     DrawSevenSegmentNumber(canvas, model->minute, cur_x, cur_y);
-    cur_x += (DIGIT_SPACING * 2) + 6; // TODO: space for :
+    cur_x += (DIGIT_SPACING * 2);
+    DrawColon(canvas, cur_x, cur_y);
+    cur_x += COLON_GAP;
 
     DrawSevenSegmentNumber(canvas, model->second, cur_x, cur_y);
 }
@@ -132,6 +138,22 @@ void DigitalClockView::DrawVerticalSegment(Canvas* canvas, uint32_t x, uint32_t 
     canvas_draw_box(canvas, x, y + PART_LENGTH + 1, SEGMENT_THICKNESS, PART_LENGTH);
     canvas_draw_dot(canvas, x + SEGMENT_SLANT + 1, y);
     canvas_draw_dot(canvas, x + 1, y + VERT_SEGMENT_LENGTH - 1);
+}
+
+void DigitalClockView::DrawColon(Canvas* canvas, uint32_t x, uint32_t y) {
+    const uint32_t colon_height = (VERT_SEGMENT_LENGTH / 2);
+    canvas_draw_box(
+        canvas,
+        x + SEGMENT_SLANT + 1,
+        y + colon_height + (COLON_THICKNESS / 2),
+        COLON_THICKNESS,
+        COLON_THICKNESS);
+    canvas_draw_box(
+        canvas,
+        x + 1,
+        y + (VERT_SEGMENT_LENGTH * 2) + SEGMENT_NOTCH - colon_height,
+        COLON_THICKNESS,
+        COLON_THICKNESS);
 }
 
 IMPLEMENT_GET_OUTER(DigitalClockView);

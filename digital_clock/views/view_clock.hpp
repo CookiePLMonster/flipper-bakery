@@ -26,6 +26,7 @@ private:
     static void DrawSevenSegmentDigit(Canvas* canvas, uint8_t digit, uint32_t x, uint32_t y);
     static void DrawHorizontalSegment(Canvas* canvas, uint32_t x, uint32_t y);
     static void DrawVerticalSegment(Canvas* canvas, uint32_t x, uint32_t y);
+    static void DrawColon(Canvas* canvas, uint32_t x, uint32_t y);
 
 private:
     outer_type* GetOuter() const;
