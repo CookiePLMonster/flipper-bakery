@@ -1,8 +1,11 @@
 #pragma once
 
+#include <cookie/within>
 #include <cookie/gui/view>
 
-class DigitalClockView {
+class DigitalClockApp;
+
+class DigitalClockView : cookie::Within<DigitalClockView, DigitalClockApp> {
 public:
     DigitalClockView();
 
@@ -10,11 +13,18 @@ public:
         return m_view.get();
     }
 
-private:
-    static void OnDraw(Canvas* canvas, void* mdl);
+public:
+    struct Model {
+        uint8_t hour, minute, second;
+
+        void OnDraw(Canvas* canvas) const;
+    };
+
+    void OnEnter();
 
 private:
-    struct Model {};
+    outer_type* GetOuter() const;
 
+private:
     cookie::View m_view;
 };

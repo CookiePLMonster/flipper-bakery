@@ -1,0 +1,44 @@
+#pragma once
+
+#include <furi/core/base.h>
+
+// This empty class can be used as a base for classes that are aggregated inside a class deriving from EnableWithin
+// How to use:
+// 1. Derive the outer class from EnableWithin<>
+// 2. Derive the inner class from Within<>
+// 3. In the outer class, define DEFINE_GET_FROM_INNER() for all inner class members that derive from Within
+// 3. In the inner class, overload GetOuter()
+// 4. In the inner class .cpp file, use IMPLEMENT_GET_OUTER() to create an implementation
+namespace cookie {
+
+template <typename A, typename B>
+class Within {
+public:
+    using inner_type = A;
+    using outer_type = B;
+};
+
+template <typename T>
+class EnableWithin {
+public:
+    using outer_type = T;
+
+protected:
+    template <auto outer_type::*ptr>
+    static outer_type* GetFromInnerImpl(uintptr_t inner) {
+        const size_t ptr_offset = reinterpret_cast<size_t>(&(((outer_type*)0)->*ptr));
+        return reinterpret_cast<outer_type*>(inner - ptr_offset);
+    }
+};
+
+};
+
+#define DEFINE_GET_FROM_INNER(field)                                                   \
+    static outer_type* GetFromInner(const auto* ptr) {                                 \
+        return GetFromInnerImpl<&outer_type::field>(reinterpret_cast<uintptr_t>(ptr)); \
+    }
+
+#define IMPLEMENT_GET_OUTER(inner_type)                \
+    auto inner_type::GetOuter() const -> outer_type* { \
+        return outer_type::GetFromInner(this);         \
+    }

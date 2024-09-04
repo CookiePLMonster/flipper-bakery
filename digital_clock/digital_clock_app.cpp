@@ -12,7 +12,8 @@ DigitalClockApp::DigitalClockApp()
     view_dispatcher_set_custom_event_callback(*m_view_dispatcher, &CustomEventCallback);
     view_dispatcher_set_navigation_event_callback(*m_view_dispatcher, &BackEventCallback);
 
-    view_dispatcher_add_view(*m_view_dispatcher, FuriEnumParam(AppView::Clock), m_clock_view.View());
+    view_dispatcher_add_view(
+        *m_view_dispatcher, FuriEnumParam(AppView::Clock), m_clock_view.View());
 }
 
 DigitalClockApp::~DigitalClockApp() {
@@ -22,6 +23,10 @@ DigitalClockApp::~DigitalClockApp() {
 void DigitalClockApp::Run() {
     scene_manager_next_scene(*m_scene_manager, FuriEnumParam(AppScene::Clock));
     view_dispatcher_run(*m_view_dispatcher);
+}
+
+void DigitalClockApp::SwitchToView(AppView view) const {
+    view_dispatcher_switch_to_view(*m_view_dispatcher, FuriEnumParam(view));
 }
 
 bool DigitalClockApp::CustomEventCallback(void* context, uint32_t event) {

@@ -5,6 +5,8 @@
 
 #include <cookie/furi_ptr>
 
+#include <functional>
+
 namespace cookie {
 
 namespace details::view {
@@ -19,7 +21,97 @@ struct deleter {
         ::view_free(p);
     }
 };
+
+template <typename T>
+struct extract_callable_traits;
+
+// Free functions
+template <typename Ret, typename Arg>
+struct extract_callable_traits<Ret (*)(Arg)> {
+    using argument_type = Arg;
+    using return_type = Ret;
+};
+
+// Non-const methods
+template <typename ClassType, typename Ret>
+struct extract_callable_traits<Ret (ClassType::*)()> {
+    using argument_type = ClassType*;
+    using return_type = Ret;
+};
+
+// Const methods
+template <typename ClassType, typename Ret>
+struct extract_callable_traits<Ret (ClassType::*)() const> {
+    using argument_type = const ClassType*;
+    using return_type = Ret;
+};
+
+// Lambdas
+template <typename T>
+struct extract_callable_traits {
+private:
+    template <typename Ret, typename ClassType, typename Arg>
+    static Arg extract_arg(Ret (ClassType::*)(Arg) const);
+
+    template <typename Ret, typename ClassType, typename Arg>
+    static Ret extract_ret(Ret (ClassType::*)(Arg) const);
+
+public:
+    using argument_type = decltype(extract_arg(&T::operator()));
+    using return_type = decltype(extract_ret(&T::operator()));
+};
+
+// A helper check to determine whether the view model can be lock-free or must be lockable
+template <typename T, typename = void>
+constexpr bool is_model_lock_free = false;
+
+template <typename T>
+constexpr bool is_model_lock_free<T, std::void_t<typename T::is_lock_free>> = true;
+
 };
 
 using View = furi_ptr<::View, details::view::allocator, details::view::deleter>;
+
+// with_view_model with support for lambdas and other callables
+// Callable may return a boolean, it'll then be used as an argument to view_commit_model
+// If the callable retuens no value, it updates the view model only if the model argument is non-const.
+template <typename Pred>
+inline bool with_view_model(::View* view, Pred&& p) {
+    using model_type_traits = details::view::extract_callable_traits<Pred>;
+    auto model = reinterpret_cast<std::decay_t<typename model_type_traits::argument_type>*>(
+        view_get_model(view));
+    bool result;
+    if constexpr(!std::is_void_v<typename model_type_traits::return_type>) {
+        result = std::invoke(std::forward<Pred>(p), *model) !=
+                 typename model_type_traits::return_type{};
+    } else {
+        using argument_by_value_t = std::remove_pointer_t<
+            std::remove_reference_t<typename model_type_traits::argument_type>>;
+
+        std::invoke(std::forward<Pred>(p), *model);
+        result = !std::is_const_v<argument_by_value_t>;
+    }
+    view_commit_model(view, result);
+    return result;
+}
+
+// Lightweight wrapper around view_model_allocate that constructs the model (if necessary)
+// and verifies that it's trivially destructible
+template <typename T, typename... Args>
+void view_emplace_model(::View* view, Args&&... args) {
+    static_assert(std::is_trivially_destructible_v<T>);
+
+    view_allocate_model(
+        view,
+        details::view::is_model_lock_free<T> ? ViewModelTypeLockFree : ViewModelTypeLocking,
+        sizeof(T));
+    if constexpr(!std::is_trivially_default_constructible_v<T>) {
+        void* buf = view_get_model(view);
+        (void)new(buf) T(std::forward<Args>(args)...);
+        view_commit_model(view, true);
+    } else {
+        // If we're not constructing, args... must be empty
+        static_assert(sizeof...(args) == 0);
+    }
+}
 };

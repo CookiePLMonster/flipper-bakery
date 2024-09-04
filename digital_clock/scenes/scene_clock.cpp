@@ -4,8 +4,7 @@
 
 void scene_clock_on_enter(void* context) {
     DigitalClockApp* app = static_cast<DigitalClockApp*>(context);
-
-    view_dispatcher_switch_to_view(*app->m_view_dispatcher, FuriEnumParam(AppView::Clock));
+    app->SwitchToView(AppView::Clock);
 }
 
 void scene_clock_on_exit(void* context) {
