@@ -63,10 +63,10 @@ static constexpr uint32_t HOR_SEGMENT_LENGTH = HOR_BOX_LENGTH + 2; // plus dots
 static constexpr uint32_t VERT_SEGMENT_LENGTH = VERT_BOX_LENGTH + 2;
 static constexpr uint32_t SEGMENT_SLANT = 1;
 static constexpr uint32_t SEGMENT_THICKNESS = 3;
-static constexpr uint32_t COLON_THICKNESS = 2;
+static constexpr uint32_t COLON_THICKNESS = 3;
 static constexpr uint32_t SEGMENT_NOTCH = 2;
 static constexpr uint32_t DIGIT_GAP = 4;
-static constexpr uint32_t COLON_GAP = DIGIT_GAP + 1;
+static constexpr uint32_t COLON_GAP = COLON_THICKNESS * 2;
 
 static constexpr uint32_t DIGIT_SPACING = HOR_SEGMENT_LENGTH + (DIGIT_GAP * 2);
 
@@ -185,7 +185,7 @@ void DigitalClockView::DrawColon(Canvas* canvas, uint32_t x, uint32_t y) {
     canvas_draw_box(
         canvas,
         x + 1,
-        y + (VERT_SEGMENT_LENGTH * 2) + SEGMENT_NOTCH - colon_height,
+        y + (VERT_SEGMENT_LENGTH * 2) - colon_height + (COLON_THICKNESS / 2),
         COLON_THICKNESS,
         COLON_THICKNESS);
 }
