@@ -1,0 +1,29 @@
+#pragma once
+
+#include <furi/core/common_defines.h>
+#include <furi/core/thread.h>
+
+#include <cookie/furi_ptr>
+
+namespace cookie {
+
+namespace details::thread {
+struct allocator {
+    FURI_ALWAYS_INLINE ::FuriThread* operator()(
+        const char* name,
+        uint32_t stack_size,
+        FuriThreadCallback callback,
+        void* context) const {
+        return ::furi_thread_alloc_ex(name, stack_size, callback, context);
+    }
+};
+
+struct deleter {
+    FURI_ALWAYS_INLINE void operator()(::FuriThread* p) const {
+        ::furi_thread_free(p);
+    }
+};
+};
+
+using FuriThread = furi_ptr<::FuriThread, details::thread::allocator, details::thread::deleter>;
+};

@@ -19,7 +19,7 @@ DigitalClockView::DigitalClockView()
     view_set_context(*m_view, this);
     view_set_draw_callback(*m_view, [](Canvas* canvas, void* mdl) {
         const Model* model = reinterpret_cast<const Model*>(mdl);
-        OnDraw(canvas, model);
+        OnDraw(canvas, *model);
     });
     view_set_enter_callback(*m_view, [](void* context) {
         DigitalClockView* view = reinterpret_cast<DigitalClockView*>(context);
@@ -64,21 +64,21 @@ void DigitalClockView::OnTimeUpdate() {
     });
 }
 
-void DigitalClockView::OnDraw(Canvas* canvas, const Model* model) {
+void DigitalClockView::OnDraw(Canvas* canvas, const Model& model) {
     canvas_clear(canvas);
 
-    uint32_t cur_x = 4;
-    const uint32_t cur_y = 24;
+    int32_t cur_x = 4;
+    const int32_t cur_y = 24;
 
-    const bool show_colon = model->tenths_of_second < 5;
+    const bool show_colon = model.tenths_of_second < 5;
 
-    cur_x += SevenSegmentDisplay::DrawNumberBCD(canvas, model->hour_bcd, cur_x, cur_y);
+    cur_x += SevenSegmentDisplay::DrawNumberBCD(canvas, model.hour_bcd, cur_x, cur_y);
     cur_x += SevenSegmentDisplay::DrawColon(show_colon ? canvas : nullptr, cur_x, cur_y);
 
-    cur_x += SevenSegmentDisplay::DrawNumberBCD(canvas, model->minute_bcd, cur_x, cur_y);
+    cur_x += SevenSegmentDisplay::DrawNumberBCD(canvas, model.minute_bcd, cur_x, cur_y);
     cur_x += SevenSegmentDisplay::DrawColon(show_colon ? canvas : nullptr, cur_x, cur_y);
 
-    cur_x += SevenSegmentDisplay::DrawNumberBCD(canvas, model->second_bcd, cur_x, cur_y);
+    cur_x += SevenSegmentDisplay::DrawNumberBCD(canvas, model.second_bcd, cur_x, cur_y);
 }
 
 IMPLEMENT_GET_OUTER(DigitalClockView);

@@ -14,8 +14,10 @@ void scene_clock_on_exit(void* context) {
 
 bool scene_clock_on_event(void* context, SceneManagerEvent event) {
     DigitalClockApp* app = static_cast<DigitalClockApp*>(context);
-    UNUSED(app);
-    UNUSED(event);
+    if(event.type == SceneManagerEventTypeBack) {
+        app->Exit();
+        return true;
+    }
 
     return false;
 }

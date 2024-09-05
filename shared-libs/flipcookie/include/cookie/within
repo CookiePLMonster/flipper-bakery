@@ -34,7 +34,7 @@ protected:
 };
 
 #define DEFINE_GET_FROM_INNER(field)                                                   \
-    static outer_type* GetFromInner(const auto* ptr) {                                 \
+    static outer_type* GetFromInner(const decltype(field)* ptr) {                      \
         return GetFromInnerImpl<&outer_type::field>(reinterpret_cast<uintptr_t>(ptr)); \
     }
 
