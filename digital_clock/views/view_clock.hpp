@@ -17,8 +17,8 @@ public:
 
 private:
     struct Model {
-        uint8_t hour, minute, second;
-        bool show_colon;
+        uint8_t hour_bcd, minute_bcd, second_bcd;
+        uint8_t tenths_of_second;
     };
 
     void OnEnter();
@@ -27,7 +27,7 @@ private:
     static void OnDraw(Canvas* canvas, const Model* model);
 
     // 7-segment-display routines and constants
-    static void DrawSevenSegmentNumber(Canvas* canvas, uint32_t num, uint32_t x, uint32_t y);
+    static void DrawSevenSegmentNumber(Canvas* canvas, uint32_t num_bcd, uint32_t x, uint32_t y);
     static void DrawSevenSegmentDigit(Canvas* canvas, uint8_t digit, uint32_t x, uint32_t y);
     static void DrawHorizontalSegment(Canvas* canvas, uint32_t x, uint32_t y);
     static void DrawVerticalSegment(Canvas* canvas, uint32_t x, uint32_t y);

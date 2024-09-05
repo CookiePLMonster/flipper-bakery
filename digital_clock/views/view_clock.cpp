@@ -3,8 +3,7 @@
 #include "digital_clock_app.hpp"
 
 #include <gui/canvas.h>
-#include <lib/datetime/datetime.h>
-#include <furi_hal_rtc.h>
+#include <stm32wbxx_ll_rtc.h>
 
 static constexpr uint32_t TIME_UPDATE_PERIOD_MS = 500;
 
@@ -44,15 +43,25 @@ void DigitalClockView::OnExit() {
 }
 
 void DigitalClockView::OnTimeUpdate() {
-    DateTime current_time;
-    furi_hal_rtc_get_datetime(&current_time);
+    FURI_CRITICAL_ENTER();
 
-    cookie::with_view_model(*m_view, [&](Model& model) {
-        bool time_changed = false;
-        time_changed |= std::exchange(model.hour, current_time.hour) != current_time.hour;
-        time_changed |= std::exchange(model.minute, current_time.minute) != current_time.minute;
-        time_changed |= std::exchange(model.second, current_time.second) != current_time.second;
-        model.show_colon = time_changed;
+    const uint32_t PREDIV_S = LL_RTC_GetSynchPrescaler(RTC);
+    const uint32_t time = LL_RTC_TIME_Get(RTC);
+
+    // Wait for the sub-second value to become safe to query
+    while(LL_RTC_IsActiveFlag_SHP(RTC)) {
+    }
+    const uint32_t subsecond = LL_RTC_TIME_GetSubSecond(RTC);
+
+    FURI_CRITICAL_EXIT();
+
+    const uint8_t tenths_of_second = ((PREDIV_S - subsecond) * 10) / (PREDIV_S + 1);
+
+    cookie::with_view_model(*m_view, [time, tenths_of_second](Model& model) {
+        model.hour_bcd = __LL_RTC_GET_HOUR(time);
+        model.minute_bcd = __LL_RTC_GET_MINUTE(time);
+        model.second_bcd = __LL_RTC_GET_SECOND(time);
+        model.tenths_of_second = tenths_of_second;
     });
 }
 
@@ -76,26 +85,32 @@ void DigitalClockView::OnDraw(Canvas* canvas, const Model* model) {
     uint32_t cur_x = 4;
     const uint32_t cur_y = 24;
 
-    DrawSevenSegmentNumber(canvas, model->hour, cur_x, cur_y);
+    const bool show_colon = model->tenths_of_second < 5;
+
+    DrawSevenSegmentNumber(canvas, model->hour_bcd, cur_x, cur_y);
     cur_x += (DIGIT_SPACING * 2);
-    if(model->show_colon) {
+    if(show_colon) {
         DrawColon(canvas, cur_x, cur_y);
     }
     cur_x += COLON_GAP;
 
-    DrawSevenSegmentNumber(canvas, model->minute, cur_x, cur_y);
+    DrawSevenSegmentNumber(canvas, model->minute_bcd, cur_x, cur_y);
     cur_x += (DIGIT_SPACING * 2);
-    if(model->show_colon) {
+    if(show_colon) {
         DrawColon(canvas, cur_x, cur_y);
     }
     cur_x += COLON_GAP;
 
-    DrawSevenSegmentNumber(canvas, model->second, cur_x, cur_y);
+    DrawSevenSegmentNumber(canvas, model->second_bcd, cur_x, cur_y);
 }
 
-void DigitalClockView::DrawSevenSegmentNumber(Canvas* canvas, uint32_t num, uint32_t x, uint32_t y) {
-    const uint8_t first = num / 10;
-    const uint8_t second = num % 10;
+void DigitalClockView::DrawSevenSegmentNumber(
+    Canvas* canvas,
+    uint32_t num_bcd,
+    uint32_t x,
+    uint32_t y) {
+    const uint8_t first = (num_bcd >> 4) & 0xF;
+    const uint8_t second = num_bcd & 0xF;
     DrawSevenSegmentDigit(canvas, first, x, y);
     DrawSevenSegmentDigit(canvas, second, x + DIGIT_SPACING, y);
 }
