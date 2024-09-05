@@ -37,7 +37,7 @@ private:
     outer_type* GetOuter() const;
 
 private:
-    cookie::View m_view;
+    cookie::ViewModel<Model> m_view{cookie::construct_model_tag};
 
     // TODO: Use FuriEventLoopTimer when it's available
     cookie::FuriTimer m_time_update_timer;

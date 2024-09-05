@@ -15,7 +15,6 @@ DigitalClockView::DigitalClockView()
           },
           FuriTimerTypePeriodic,
           this) {
-    cookie::view_emplace_model<Model>(*m_view);
 
     view_set_context(*m_view, this);
     view_set_draw_callback(*m_view, [](Canvas* canvas, void* mdl) {
