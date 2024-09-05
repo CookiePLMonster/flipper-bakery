@@ -26,13 +26,6 @@ private:
     void OnTimeUpdate();
     static void OnDraw(Canvas* canvas, const Model* model);
 
-    // 7-segment-display routines and constants
-    static void DrawSevenSegmentNumber(Canvas* canvas, uint32_t num_bcd, uint32_t x, uint32_t y);
-    static void DrawSevenSegmentDigit(Canvas* canvas, uint8_t digit, uint32_t x, uint32_t y);
-    static void DrawHorizontalSegment(Canvas* canvas, uint32_t x, uint32_t y);
-    static void DrawVerticalSegment(Canvas* canvas, uint32_t x, uint32_t y);
-    static void DrawColon(Canvas* canvas, uint32_t x, uint32_t y);
-
 private:
     outer_type* GetOuter() const;
 
