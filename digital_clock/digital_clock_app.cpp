@@ -31,6 +31,7 @@ DigitalClockApp::~DigitalClockApp() {
     view_dispatcher_remove_view(*m_view_dispatcher, FuriEnumParam(AppView::Clock));
     view_dispatcher_remove_view(*m_view_dispatcher, FuriEnumParam(AppView::Init));
 
+    StopTimeSync();
     furi_thread_join(*m_time_sync_thread);
 }
 

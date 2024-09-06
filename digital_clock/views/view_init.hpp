@@ -24,7 +24,7 @@ private:
     static void OnDraw(Canvas* canvas, const Model& model);
 
 private:
-    cookie::ViewModel<Model> m_view{cookie::construct_model_tag};
+    cookie::ViewModel<Model> m_view;
 
     // TODO: Use FuriEventLoopTimer when it's available
     cookie::FuriTimer m_text_switch_timer;

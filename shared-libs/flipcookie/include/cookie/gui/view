@@ -14,21 +14,21 @@ void view_emplace_model(::View* view, Args&&... args);
 
 namespace details::view {
 
-struct construct_model_tag_t {};
+struct defer_model_ctor_t {
+    explicit defer_model_ctor_t() = default;
+};
 
 template <typename T>
 struct allocator {
     using model_type = T;
 
-    template <typename... Args>
-    FURI_ALWAYS_INLINE ::View* operator()() const {
+    FURI_ALWAYS_INLINE ::View* operator()(defer_model_ctor_t t) const {
+        UNUSED(t);
         return ::view_alloc();
     }
 
     template <typename... Args>
-    FURI_ALWAYS_INLINE ::View* operator()(const construct_model_tag_t&, Args&&... args) const {
-        static_assert(!std::is_void_v<model_type>);
-
+    FURI_ALWAYS_INLINE ::View* operator()(Args&&... args) const {
         ::View* view = ::view_alloc();
         view_emplace_model<model_type, true>(view, std::forward<Args>(args)...);
         return view;
@@ -40,13 +40,27 @@ struct deleter {
     using model_type = T;
 
     FURI_ALWAYS_INLINE void operator()(::View* p) const {
-        if constexpr(!std::is_void_v<model_type> && !std::is_trivially_destructible_v<model_type>) {
+        if constexpr(!std::is_trivially_destructible_v<model_type>) {
             model_type* model = reinterpret_cast<model_type*>(view_get_model(p));
             if(model) {
                 model->~model_type();
                 view_commit_model(p, false);
             }
         }
+        ::view_free(p);
+    }
+};
+
+template <>
+struct allocator<void> {
+    FURI_ALWAYS_INLINE ::View* operator()() const {
+        return ::view_alloc();
+    }
+};
+
+template <>
+struct deleter<void> {
+    FURI_ALWAYS_INLINE void operator()(::View* p) const {
         ::view_free(p);
     }
 };
@@ -98,7 +112,7 @@ template <typename T>
 constexpr bool is_model_lock_free<T, std::void_t<typename T::is_lock_free>> = true;
 
 };
-constexpr details::view::construct_model_tag_t construct_model_tag;
+inline constexpr details::view::defer_model_ctor_t defer_model_ctor{};
 
 // If Model type is specified, the class also manages destruction of Model (if necessary)
 // Model will be constructed if cookie::construct_model_tag is passed
