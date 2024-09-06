@@ -43,31 +43,17 @@ void DigitalClockView::OnExit() {
     furi_timer_stop(*m_time_update_timer);
 }
 
-// TODO: This may become part of cookie::DateTime which would be like Furi DateTime, but with milliseconds
-static std::pair<uint32_t, uint32_t> GetTimeAndSubsecond() {
-    cookie::ScopedFuriCritical critical;
-
-    volatile uint32_t prev_subsecond = LL_RTC_TIME_GetSubSecond(RTC);
-    volatile uint32_t prev_date = LL_RTC_DATE_Get(RTC); // Unlock the shadow registers
-    UNUSED(prev_date);
-    while(true) {
-        volatile uint32_t cur_subsecond = LL_RTC_TIME_GetSubSecond(RTC);
-        volatile uint32_t cur_time = LL_RTC_TIME_Get(RTC);
-        volatile uint32_t cur_date = LL_RTC_DATE_Get(RTC); // Unlock the shadow registers
-        UNUSED(cur_date);
-
-        if(cur_subsecond == prev_subsecond) {
-            // Read succeeded
-            return {cur_time, cur_subsecond};
-        }
-
-        // Read failed, try again
-        prev_subsecond = cur_subsecond;
-    }
-}
-
 void DigitalClockView::OnTimeUpdate() {
-    const auto& [time, subsecond] = GetTimeAndSubsecond();
+    // STM32L496xx errata stated that RTC time needs to be read twice as the lock may fail,
+    // but the STM32WB55Rx errata does not state this. While the earlier version of this code
+    // implemented the loop, now we're hoping that a single read is enough.
+    uint32_t subsecond, time;
+    {
+        cookie::ScopedFuriCritical critical;
+        subsecond = LL_RTC_TIME_GetSubSecond(RTC);
+        time = LL_RTC_TIME_Get(RTC);
+        LL_RTC_DATE_Get(RTC); // Unlock the shadow registers
+    }
 
     const uint8_t tenths_of_second = ((PREDIV_S - subsecond) * 10) / (PREDIV_S + 1);
 
