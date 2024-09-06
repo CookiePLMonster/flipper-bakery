@@ -2,8 +2,10 @@
 
 #include "scenes/scenes.hpp"
 
-#include <cookie/enum_class>
+#include <cookie/common>
 #include <stm32wbxx_ll_rtc.h>
+
+using namespace cookie;
 
 DigitalClockApp::DigitalClockApp()
     : m_scene_manager(scene_handlers, this)
@@ -84,11 +86,20 @@ bool DigitalClockApp::BackEventCallback(void* context) {
 
 int32_t DigitalClockApp::TimeSyncThread() {
     auto GetSeconds = [] {
-        FURI_CRITICAL_ENTER();
-        volatile uint32_t seconds = LL_RTC_TIME_GetSecond(RTC);
-        FURI_CRITICAL_EXIT();
+        ScopedFuriCritical critical;
+        uint32_t seconds = LL_RTC_TIME_GetSecond(RTC);
+        const uint32_t date = LL_RTC_DATE_Get(RTC);
+        UNUSED(date); // This read is necessary to unlock the shadow registers
         return __LL_RTC_CONVERT_BCD2BIN(seconds);
     };
+
+    // We need subseconds to be available, wait for the shift operation to end before starting the sync
+    {
+        ScopedFuriCritical critical;
+        while(LL_RTC_IsActiveFlag_SHP(RTC)) {
+            furi_thread_yield();
+        }
+    }
 
     const uint32_t start_seconds = GetSeconds();
     const uint32_t target_seconds = (start_seconds + 3) % 60;

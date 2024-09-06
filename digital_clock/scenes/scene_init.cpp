@@ -1,6 +1,6 @@
 #include "digital_clock_app.hpp"
 
-#include <cookie/enum_class>
+#include <cookie/common>
 
 void scene_init_on_enter(void* context) {
     DigitalClockApp* app = static_cast<DigitalClockApp*>(context);
@@ -16,7 +16,7 @@ void scene_init_on_exit(void* context) {
 bool scene_init_on_event(void* context, SceneManagerEvent event) {
     DigitalClockApp* app = static_cast<DigitalClockApp*>(context);
     if(event.type == SceneManagerEventTypeCustom &&
-       event.event == FuriEnumParam(AppFlowEvent::SyncDone)) {
+       event.event == cookie::FuriEnumParam(AppFlowEvent::SyncDone)) {
         return app->SearchAndSwitchToAnotherScene(AppScene::Clock);
     }
 

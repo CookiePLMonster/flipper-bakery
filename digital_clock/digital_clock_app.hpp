@@ -58,7 +58,6 @@ private:
 
     // TODO: If we get RTC alarms in the future, this will become pointless
     // Consider introducing cookie::FuriThread_Nullable for this, and keep the thread alive only for the duration of the scene
-    // Once #3865 is merged, this thread can just be detached on success so it releases by itself
     cookie::FuriThread m_time_sync_thread;
 
 public:

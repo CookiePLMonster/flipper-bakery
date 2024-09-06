@@ -1,7 +1,5 @@
 #include "digital_clock_app.hpp"
 
-#include <cookie/enum_class>
-
 void scene_clock_on_enter(void* context) {
     DigitalClockApp* app = static_cast<DigitalClockApp*>(context);
     app->SwitchToView(AppView::Clock);

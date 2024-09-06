@@ -6,7 +6,9 @@
 #include <gui/canvas.h>
 #include <stm32wbxx_ll_rtc.h>
 
-static constexpr uint32_t TIME_UPDATE_PERIOD_MS = 100;
+#include <cookie/common>
+
+static constexpr uint32_t TIME_UPDATE_PERIOD_MS = 500;
 
 DigitalClockView::DigitalClockView()
     : m_time_update_timer(
@@ -15,7 +17,8 @@ DigitalClockView::DigitalClockView()
               view->OnTimeUpdate();
           },
           FuriTimerTypePeriodic,
-          this) {
+          this)
+    , PREDIV_S(LL_RTC_GetSynchPrescaler(RTC)) {
     view_set_context(*m_view, this);
     view_set_draw_callback(*m_view, [](Canvas* canvas, void* mdl) {
         const Model* model = reinterpret_cast<const Model*>(mdl);
@@ -40,34 +43,39 @@ void DigitalClockView::OnExit() {
     furi_timer_stop(*m_time_update_timer);
 }
 
-void DigitalClockView::OnTimeUpdate() {
-    FURI_CRITICAL_ENTER();
+// TODO: This may become part of cookie::DateTime which would be like Furi DateTime, but with milliseconds
+static std::pair<uint32_t, uint32_t> GetTimeAndSubsecond() {
+    cookie::ScopedFuriCritical critical;
 
-    const uint32_t PREDIV_S = LL_RTC_GetSynchPrescaler(RTC);
-    const uint32_t time = LL_RTC_TIME_Get(RTC);
+    volatile uint32_t prev_subsecond = LL_RTC_TIME_GetSubSecond(RTC);
+    volatile uint32_t prev_date = LL_RTC_DATE_Get(RTC); // Unlock the shadow registers
+    UNUSED(prev_date);
+    while(true) {
+        volatile uint32_t cur_subsecond = LL_RTC_TIME_GetSubSecond(RTC);
+        volatile uint32_t cur_time = LL_RTC_TIME_Get(RTC);
+        volatile uint32_t cur_date = LL_RTC_DATE_Get(RTC); // Unlock the shadow registers
+        UNUSED(cur_date);
 
-    // Wait for the sub-second value to become safe to query
-    while(LL_RTC_IsActiveFlag_SHP(RTC)) {
+        if(cur_subsecond == prev_subsecond) {
+            // Read succeeded
+            return {cur_time, cur_subsecond};
+        }
+
+        // Read failed, try again
+        prev_subsecond = cur_subsecond;
     }
-    const uint32_t subsecond = LL_RTC_TIME_GetSubSecond(RTC);
+}
 
-    FURI_CRITICAL_EXIT();
+void DigitalClockView::OnTimeUpdate() {
+    const auto& [time, subsecond] = GetTimeAndSubsecond();
 
     const uint8_t tenths_of_second = ((PREDIV_S - subsecond) * 10) / (PREDIV_S + 1);
 
     cookie::with_view_model(*m_view, [time, tenths_of_second](Model& model) {
-        bool should_update = false;
-        const uint8_t hour = __LL_RTC_GET_HOUR(time);
-        const uint8_t minute = __LL_RTC_GET_MINUTE(time);
-        const uint8_t second = __LL_RTC_GET_SECOND(time);
-        should_update |= std::exchange(model.hour_bcd, hour) != hour;
-        should_update |= std::exchange(model.minute_bcd, minute) != minute;
-        should_update |= std::exchange(model.second_bcd, second) != second;
-        const uint8_t previous_tenths_of_second =
-            std::exchange(model.tenths_of_second, tenths_of_second);
-        should_update |= (previous_tenths_of_second < 5 && tenths_of_second >= 5) ||
-                         (tenths_of_second < 5 && previous_tenths_of_second >= 5);
-        return should_update;
+        model.hour_bcd = __LL_RTC_GET_HOUR(time);
+        model.minute_bcd = __LL_RTC_GET_MINUTE(time);
+        model.second_bcd = __LL_RTC_GET_SECOND(time);
+        model.tenths_of_second = tenths_of_second;
     });
 }
 
