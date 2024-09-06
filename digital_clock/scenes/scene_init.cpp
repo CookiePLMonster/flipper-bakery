@@ -10,7 +10,7 @@ void scene_init_on_enter(void* context) {
 
 void scene_init_on_exit(void* context) {
     DigitalClockApp* app = static_cast<DigitalClockApp*>(context);
-    app->StopTimeSync();
+    UNUSED(app);
 }
 
 bool scene_init_on_event(void* context, SceneManagerEvent event) {

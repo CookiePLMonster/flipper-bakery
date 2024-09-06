@@ -6,7 +6,7 @@
 #include <gui/canvas.h>
 #include <stm32wbxx_ll_rtc.h>
 
-static constexpr uint32_t TIME_UPDATE_PERIOD_MS = 500;
+static constexpr uint32_t TIME_UPDATE_PERIOD_MS = 100;
 
 DigitalClockView::DigitalClockView()
     : m_time_update_timer(
@@ -32,9 +32,8 @@ DigitalClockView::DigitalClockView()
 }
 
 void DigitalClockView::OnEnter() {
-    OnTimeUpdate();
-
     furi_timer_start(*m_time_update_timer, furi_ms_to_ticks(TIME_UPDATE_PERIOD_MS));
+    OnTimeUpdate();
 }
 
 void DigitalClockView::OnExit() {
@@ -57,10 +56,18 @@ void DigitalClockView::OnTimeUpdate() {
     const uint8_t tenths_of_second = ((PREDIV_S - subsecond) * 10) / (PREDIV_S + 1);
 
     cookie::with_view_model(*m_view, [time, tenths_of_second](Model& model) {
-        model.hour_bcd = __LL_RTC_GET_HOUR(time);
-        model.minute_bcd = __LL_RTC_GET_MINUTE(time);
-        model.second_bcd = __LL_RTC_GET_SECOND(time);
-        model.tenths_of_second = tenths_of_second;
+        bool should_update = false;
+        const uint8_t hour = __LL_RTC_GET_HOUR(time);
+        const uint8_t minute = __LL_RTC_GET_MINUTE(time);
+        const uint8_t second = __LL_RTC_GET_SECOND(time);
+        should_update |= std::exchange(model.hour_bcd, hour) != hour;
+        should_update |= std::exchange(model.minute_bcd, minute) != minute;
+        should_update |= std::exchange(model.second_bcd, second) != second;
+        const uint8_t previous_tenths_of_second =
+            std::exchange(model.tenths_of_second, tenths_of_second);
+        should_update |= (previous_tenths_of_second < 5 && tenths_of_second >= 5) ||
+                         (tenths_of_second < 5 && previous_tenths_of_second >= 5);
+        return should_update;
     });
 }
 
