@@ -48,10 +48,10 @@ private:
 private:
     cookie::Gui m_gui;
 
-    cookie::ViewDispatcher m_view_dispatcher;
+    cookie::ViewDispatcher m_view_dispatcher{m_gui};
     InitView m_init_view;
     DigitalClockView m_clock_view;
-    cookie::SceneManager m_scene_manager;
+    cookie::SceneManager m_scene_manager{scene_handlers, this};
 
     // We can't submit a custom view dispatcher event from the ISR, as that tries to block.
     // Work it around by releasing a semaphore from the ISR, and putting a custom event in the queue this way instead.

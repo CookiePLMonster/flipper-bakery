@@ -20,8 +20,7 @@ static constexpr auto TICK_TOCK_TIMER_INTERRUPT = FuriHalInterruptIdLpTim2;
 static constexpr auto TICK_TOCK_TIMER_IRQ = LPTIM2_IRQn;
 static constexpr uint32_t TICK_TOCK_TIMER_FREQ = 32768u;
 
-DigitalClockApp::DigitalClockApp()
-    : m_scene_manager(scene_handlers, this) {
+DigitalClockApp::DigitalClockApp() {
     // TODO: Consider introducing cookie::FuriEventLoopSubscriptionCookie that takes pointers
     // to subscribed elements and thus can auto-unsubscribe from the destructor at zero cost (empty class)
     // Best to wait for that when ViewDispatcher can adopt an event loop, it'll simplify semantics
@@ -37,8 +36,6 @@ DigitalClockApp::DigitalClockApp()
             return true;
         },
         this);
-
-    view_dispatcher_attach_to_gui(*m_view_dispatcher, *m_gui, ViewDispatcherTypeFullscreen);
 
     view_dispatcher_set_event_callback_context(*m_view_dispatcher, this);
     view_dispatcher_set_custom_event_callback(*m_view_dispatcher, &CustomEventCallback);

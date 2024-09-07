@@ -6,6 +6,7 @@
 #include <gui/view_dispatcher.h>
 
 #include <cookie/furi_ptr>
+#include <cookie/gui/gui>
 
 namespace cookie {
 
@@ -13,6 +14,13 @@ namespace details::view_dispatcher {
 struct allocator {
     FURI_ALWAYS_INLINE ::ViewDispatcher* operator()() const {
         return ::view_dispatcher_alloc();
+    }
+
+    FURI_ALWAYS_INLINE ::ViewDispatcher*
+        operator()(const Gui& gui, ViewDispatcherType type = ViewDispatcherTypeFullscreen) const {
+        ::ViewDispatcher* view_dispatcher = ::view_dispatcher_alloc();
+        view_dispatcher_attach_to_gui(view_dispatcher, *gui, type);
+        return view_dispatcher;
     }
 };
 
