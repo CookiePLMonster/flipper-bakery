@@ -8,14 +8,13 @@
 static constexpr uint32_t TEXT_SWITCH_PERIOD_MS = 1000;
 
 InitView::InitView()
-    : m_text_switch_timer(
+    : m_splash_stage_timer(
+          GetOuter()->GetEventLoop(),
           [](void* context) {
               InitView* view = reinterpret_cast<InitView*>(context);
-              cookie::with_view_model(*view->m_view, [](Model& model) {
-                  model.display_second_line = true;
-              });
+              view->OnStageTimerTimeout();
           },
-          FuriTimerTypeOnce,
+          FuriEventLoopTimerTypePeriodic,
           this) {
     view_set_context(*m_view, this);
     view_set_draw_callback(*m_view, [](Canvas* canvas, void* mdl) {
@@ -30,14 +29,32 @@ InitView::InitView()
         InitView* view = reinterpret_cast<InitView*>(context);
         view->OnExit();
     });
+    view_set_input_callback(*m_view, [](InputEvent* event, void* context) {
+        if(event->type == InputTypeShort && event->key == InputKeyOk) {
+            InitView* view = reinterpret_cast<InitView*>(context);
+            view->FinishSplash();
+            return true;
+        }
+        return false;
+    });
 }
 
 void InitView::OnEnter() {
-    furi_timer_start(*m_text_switch_timer, furi_ms_to_ticks(TEXT_SWITCH_PERIOD_MS));
+    m_splash_stage = 0;
+    furi_event_loop_timer_start(*m_splash_stage_timer, furi_ms_to_ticks(TEXT_SWITCH_PERIOD_MS));
 }
 
 void InitView::OnExit() {
-    furi_timer_stop(*m_text_switch_timer);
+    furi_event_loop_timer_stop(*m_splash_stage_timer);
+}
+
+void InitView::OnStageTimerTimeout() {
+    m_splash_stage++;
+    if(m_splash_stage == 1) {
+        cookie::with_view_model(*m_view, [](Model& model) { model.display_second_line = true; });
+    } else {
+        FinishSplash();
+    }
 }
 
 void InitView::OnDraw(Canvas* canvas, const Model& model) {
@@ -52,3 +69,10 @@ void InitView::OnDraw(Canvas* canvas, const Model& model) {
         (128 - text_width) / 2,
         (64 - SevenSegmentDisplay::GetGlyphHeight()) / 2);
 }
+
+void InitView::FinishSplash() {
+    furi_event_loop_timer_stop(*m_splash_stage_timer);
+    GetOuter()->SendAppEvent(AppLogicEvent::GoToNextScene);
+}
+
+IMPLEMENT_GET_OUTER(InitView);

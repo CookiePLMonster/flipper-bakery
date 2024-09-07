@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cookie/timer>
+#include <cookie/event_loop>
 #include <cookie/within>
 #include <cookie/gui/view>
 
@@ -21,11 +21,16 @@ private:
 
     void OnEnter();
     void OnExit();
+    void OnStageTimerTimeout();
     static void OnDraw(Canvas* canvas, const Model& model);
+
+    void FinishSplash();
+
+    outer_type* GetOuter() const;
 
 private:
     cookie::ViewModel<Model> m_view;
 
-    // TODO: Use FuriEventLoopTimer when it's available
-    cookie::FuriTimer m_text_switch_timer;
+    cookie::FuriEventLoopTimer m_splash_stage_timer;
+    uint32_t m_splash_stage;
 };

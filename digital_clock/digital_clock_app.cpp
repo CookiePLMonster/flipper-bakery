@@ -21,15 +21,7 @@ static constexpr auto TICK_TOCK_TIMER_IRQ = LPTIM2_IRQn;
 static constexpr uint32_t TICK_TOCK_TIMER_FREQ = 32768u;
 
 DigitalClockApp::DigitalClockApp()
-    : m_scene_manager(scene_handlers, this)
-    , m_time_sync_thread(
-          "TimeSync",
-          1024,
-          [](void* context) {
-              DigitalClockApp* view = reinterpret_cast<DigitalClockApp*>(context);
-              return view->TimeSyncThread();
-          },
-          this) {
+    : m_scene_manager(scene_handlers, this) {
     // TODO: Consider introducing cookie::FuriEventLoopSubscriptionCookie that takes pointers
     // to subscribed elements and thus can auto-unsubscribe from the destructor at zero cost (empty class)
     // Best to wait for that when ViewDispatcher can adopt an event loop, it'll simplify semantics
@@ -40,7 +32,7 @@ DigitalClockApp::DigitalClockApp()
         FuriEventLoopEventIn,
         [](FuriEventLoopObject* object, void* context) {
             DigitalClockApp* app = reinterpret_cast<DigitalClockApp*>(context);
-            app->SendAppEvent(AppFlowEvent::TickTock);
+            app->SendAppEvent(AppLogicEvent::TickTock);
             furi_semaphore_acquire(reinterpret_cast<::FuriSemaphore*>(object), FuriWaitForever);
             return true;
         },
@@ -86,9 +78,6 @@ DigitalClockApp::~DigitalClockApp() {
     view_dispatcher_remove_view(*m_view_dispatcher, FuriEnumParam(AppView::Clock));
     view_dispatcher_remove_view(*m_view_dispatcher, FuriEnumParam(AppView::Init));
 
-    StopTimeSync();
-    furi_thread_join(*m_time_sync_thread);
-
     furi_event_loop_unsubscribe(
         view_dispatcher_get_event_loop(*m_view_dispatcher), *m_tick_tock_semaphore);
 }
@@ -107,7 +96,7 @@ void DigitalClockApp::SwitchToView(AppView view) const {
     view_dispatcher_switch_to_view(*m_view_dispatcher, FuriEnumParam(view));
 }
 
-void DigitalClockApp::SendAppEvent(AppFlowEvent event) const {
+void DigitalClockApp::SendAppEvent(AppLogicEvent event) const {
     view_dispatcher_send_custom_event(*m_view_dispatcher, FuriEnumParam(event));
 }
 
@@ -118,16 +107,6 @@ bool DigitalClockApp::SearchAndSwitchToAnotherScene(AppScene scene) const {
 
 void DigitalClockApp::NextScene(AppScene scene) const {
     scene_manager_next_scene(*m_scene_manager, FuriEnumParam(scene));
-}
-
-void DigitalClockApp::StartTimeSync() {
-    furi_thread_set_priority(*m_time_sync_thread, FuriThreadPriorityIdle);
-    furi_thread_start(*m_time_sync_thread);
-}
-
-void DigitalClockApp::StopTimeSync() {
-    furi_thread_flags_set(
-        furi_thread_get_id(*m_time_sync_thread), FuriEnumParam(SyncThreadEvent::Shutdown));
 }
 
 void DigitalClockApp::StartTickTockTimer() {
@@ -155,6 +134,10 @@ void DigitalClockApp::StopTickTockTimer() {
     NVIC_ClearPendingIRQ(TICK_TOCK_TIMER_IRQ);
 }
 
+::FuriEventLoop* DigitalClockApp::GetEventLoop() const {
+    return view_dispatcher_get_event_loop(*m_view_dispatcher);
+}
+
 bool DigitalClockApp::CustomEventCallback(void* context, uint32_t event) {
     DigitalClockApp* app = reinterpret_cast<DigitalClockApp*>(context);
     return scene_manager_handle_custom_event(*app->m_scene_manager, event);
@@ -163,49 +146,4 @@ bool DigitalClockApp::CustomEventCallback(void* context, uint32_t event) {
 bool DigitalClockApp::BackEventCallback(void* context) {
     DigitalClockApp* app = reinterpret_cast<DigitalClockApp*>(context);
     return scene_manager_handle_back_event(*app->m_scene_manager);
-}
-
-int32_t DigitalClockApp::TimeSyncThread() {
-    auto GetSeconds = [] {
-        ScopedFuriCritical critical;
-        uint32_t seconds = LL_RTC_TIME_GetSecond(RTC);
-        const uint32_t date = LL_RTC_DATE_Get(RTC);
-        UNUSED(date); // This read is necessary to unlock the shadow registers
-        return __LL_RTC_CONVERT_BCD2BIN(seconds);
-    };
-
-    // We need subseconds to be available, wait for the shift operation to end before starting the sync
-    {
-        ScopedFuriCritical critical;
-        while(LL_RTC_IsActiveFlag_SHP(RTC)) {
-            furi_thread_yield();
-        }
-    }
-
-    const uint32_t start_seconds = GetSeconds();
-    const uint32_t target_seconds = (start_seconds + 3) % 60;
-
-    // Spin the thread until the next second, then order to switch to the next scene ASAP
-    while(true) {
-        uint32_t events =
-            furi_thread_flags_wait(FuriEnumParam(SyncThreadEvent::Mask), FuriFlagWaitAny, 0);
-
-        if((events & FuriFlagError) == 0 &&
-           (events & FuriEnumParam(SyncThreadEvent::Shutdown)) != 0) {
-            break;
-        }
-
-        const uint32_t seconds = GetSeconds();
-        if(seconds == target_seconds) {
-            SendAppEvent(AppFlowEvent::SyncDone);
-
-            // Switch away ASAP to let the scene switch
-            furi_thread_yield();
-            break;
-        }
-
-        furi_thread_yield();
-    }
-
-    return 0;
 }

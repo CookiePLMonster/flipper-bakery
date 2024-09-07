@@ -27,7 +27,7 @@ DigitalClockView::DigitalClockView()
     });
     view_set_custom_callback(*m_view, [](uint32_t event, void* context) {
         DigitalClockView* view = reinterpret_cast<DigitalClockView*>(context);
-        if(event == cookie::FuriEnumParam(AppFlowEvent::TickTock)) {
+        if(event == cookie::FuriEnumParam(AppLogicEvent::TickTock)) {
             view->OnTimeUpdate();
         }
         return false;
