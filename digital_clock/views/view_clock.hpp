@@ -32,8 +32,5 @@ private:
 private:
     cookie::ViewModel<Model> m_view;
 
-    // TODO: Use FuriEventLoopTimer when it's available
-    cookie::FuriTimer m_time_update_timer;
-
     const uint32_t PREDIV_S;
 };

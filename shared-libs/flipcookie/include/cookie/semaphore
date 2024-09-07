@@ -1,0 +1,37 @@
+// <semaphore> -*- C++ -*-
+
+#pragma once
+
+#include <furi/core/common_defines.h>
+#include <furi/core/semaphore.h>
+
+#include <cookie/furi_ptr>
+
+namespace cookie {
+
+namespace details::semaphore {
+struct allocator {
+    FURI_ALWAYS_INLINE ::FuriSemaphore*
+        operator()(uint32_t max_count, uint32_t initial_count) const {
+        return ::furi_semaphore_alloc(max_count, initial_count);
+    }
+};
+
+struct binary_allocator {
+    FURI_ALWAYS_INLINE ::FuriSemaphore* operator()() const {
+        return ::furi_semaphore_alloc(1, 0);
+    }
+};
+
+struct deleter {
+    FURI_ALWAYS_INLINE void operator()(::FuriSemaphore* p) const {
+        ::furi_semaphore_free(p);
+    }
+};
+};
+
+using FuriSemaphore =
+    furi_ptr<::FuriSemaphore, details::semaphore::allocator, details::semaphore::deleter>;
+using FuriBinarySemaphore =
+    furi_ptr<::FuriSemaphore, details::semaphore::binary_allocator, details::semaphore::deleter>;
+};

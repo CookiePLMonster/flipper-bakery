@@ -11,14 +11,7 @@
 static constexpr uint32_t TIME_UPDATE_PERIOD_MS = 500;
 
 DigitalClockView::DigitalClockView()
-    : m_time_update_timer(
-          [](void* context) {
-              DigitalClockView* view = reinterpret_cast<DigitalClockView*>(context);
-              view->OnTimeUpdate();
-          },
-          FuriTimerTypePeriodic,
-          this)
-    , PREDIV_S(LL_RTC_GetSynchPrescaler(RTC)) {
+    : PREDIV_S(LL_RTC_GetSynchPrescaler(RTC)) {
     view_set_context(*m_view, this);
     view_set_draw_callback(*m_view, [](Canvas* canvas, void* mdl) {
         const Model* model = reinterpret_cast<const Model*>(mdl);
@@ -32,15 +25,20 @@ DigitalClockView::DigitalClockView()
         DigitalClockView* view = reinterpret_cast<DigitalClockView*>(context);
         view->OnExit();
     });
+    view_set_custom_callback(*m_view, [](uint32_t event, void* context) {
+        DigitalClockView* view = reinterpret_cast<DigitalClockView*>(context);
+        if(event == cookie::FuriEnumParam(AppFlowEvent::TickTock)) {
+            view->OnTimeUpdate();
+        }
+        return false;
+    });
 }
 
 void DigitalClockView::OnEnter() {
-    furi_timer_start(*m_time_update_timer, furi_ms_to_ticks(TIME_UPDATE_PERIOD_MS));
     OnTimeUpdate();
 }
 
 void DigitalClockView::OnExit() {
-    furi_timer_stop(*m_time_update_timer);
 }
 
 void DigitalClockView::OnTimeUpdate() {

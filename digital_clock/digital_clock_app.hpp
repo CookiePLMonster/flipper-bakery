@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cookie/semaphore>
 #include <cookie/thread>
 #include <cookie/within>
 #include <cookie/gui/gui>
@@ -19,6 +20,7 @@ enum class AppView {
 
 enum class AppFlowEvent {
     SyncDone,
+    TickTock,
 };
 
 class DigitalClockApp : cookie::EnableWithin<DigitalClockApp> {
@@ -36,6 +38,9 @@ public:
 
     void StartTimeSync();
     void StopTimeSync();
+
+    void StartTickTockTimer();
+    void StopTickTockTimer();
 
 private:
     static bool CustomEventCallback(void* context, uint32_t event);
@@ -59,6 +64,11 @@ private:
     // TODO: If we get RTC alarms in the future, this will become pointless
     // Consider introducing cookie::FuriThread_Nullable for this, and keep the thread alive only for the duration of the scene
     cookie::FuriThread m_time_sync_thread;
+
+    // We can't submit a custom view dispatcher event from the ISR, as that tries to block.
+    // Work it around by releasing a semaphore from the ISR, and putting a custom event in the queue this way instead
+    cookie::FuriBinarySemaphore m_tick_tock_semaphore;
+    bool m_tick_tock_timer_running = false;
 
 public:
     DEFINE_GET_FROM_INNER(m_clock_view);

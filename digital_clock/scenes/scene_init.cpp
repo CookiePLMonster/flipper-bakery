@@ -17,6 +17,7 @@ bool scene_init_on_event(void* context, SceneManagerEvent event) {
     DigitalClockApp* app = static_cast<DigitalClockApp*>(context);
     if(event.type == SceneManagerEventTypeCustom &&
        event.event == cookie::FuriEnumParam(AppFlowEvent::SyncDone)) {
+        app->StartTickTockTimer();
         return app->SearchAndSwitchToAnotherScene(AppScene::Clock);
     }
 
