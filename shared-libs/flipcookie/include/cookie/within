@@ -1,3 +1,5 @@
+// <within> -*- C++ -*-
+
 #pragma once
 
 #include <furi/core/base.h>

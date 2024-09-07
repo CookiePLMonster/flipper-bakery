@@ -1,3 +1,5 @@
+// <common> -*- C++ -*-
+
 #pragma once
 
 #include <furi/core/common_defines.h>

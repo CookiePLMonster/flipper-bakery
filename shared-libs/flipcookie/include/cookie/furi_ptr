@@ -1,3 +1,5 @@
+// <furi_ptr> -*- C++ -*-
+
 #pragma once
 
 #include <utility>
