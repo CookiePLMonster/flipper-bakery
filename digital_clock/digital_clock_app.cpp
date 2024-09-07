@@ -44,9 +44,9 @@ DigitalClockApp::DigitalClockApp() {
     // TODO: Similarly to the above, consider cookie::ViewDispatcher::ViewCookie that
     // automatically removes the view. Should again be an empty class.
     view_dispatcher_add_view(
-        *m_view_dispatcher, FuriEnumParam(AppView::Init), *m_init_view.View());
+        *m_view_dispatcher, furi_enum_param(AppView::Init), *m_init_view.View());
     view_dispatcher_add_view(
-        *m_view_dispatcher, FuriEnumParam(AppView::Clock), *m_clock_view.View());
+        *m_view_dispatcher, furi_enum_param(AppView::Clock), *m_clock_view.View());
 
     furi_hal_bus_enable(TICK_TOCK_TIMER_BUS);
     furi_hal_interrupt_set_isr(
@@ -72,15 +72,15 @@ DigitalClockApp::~DigitalClockApp() {
     furi_hal_interrupt_set_isr(TICK_TOCK_TIMER_INTERRUPT, nullptr, nullptr);
     furi_hal_bus_disable(TICK_TOCK_TIMER_BUS);
 
-    view_dispatcher_remove_view(*m_view_dispatcher, FuriEnumParam(AppView::Clock));
-    view_dispatcher_remove_view(*m_view_dispatcher, FuriEnumParam(AppView::Init));
+    view_dispatcher_remove_view(*m_view_dispatcher, furi_enum_param(AppView::Clock));
+    view_dispatcher_remove_view(*m_view_dispatcher, furi_enum_param(AppView::Init));
 
     furi_event_loop_unsubscribe(
         view_dispatcher_get_event_loop(*m_view_dispatcher), *m_tick_tock_semaphore);
 }
 
 void DigitalClockApp::Run() {
-    scene_manager_next_scene(*m_scene_manager, FuriEnumParam(AppScene::Init));
+    scene_manager_next_scene(*m_scene_manager, furi_enum_param(AppScene::Init));
     view_dispatcher_run(*m_view_dispatcher);
 }
 
@@ -90,20 +90,20 @@ void DigitalClockApp::Exit() {
 }
 
 void DigitalClockApp::SwitchToView(AppView view) const {
-    view_dispatcher_switch_to_view(*m_view_dispatcher, FuriEnumParam(view));
+    view_dispatcher_switch_to_view(*m_view_dispatcher, furi_enum_param(view));
 }
 
 void DigitalClockApp::SendAppEvent(AppLogicEvent event) const {
-    view_dispatcher_send_custom_event(*m_view_dispatcher, FuriEnumParam(event));
+    view_dispatcher_send_custom_event(*m_view_dispatcher, furi_enum_param(event));
 }
 
 bool DigitalClockApp::SearchAndSwitchToAnotherScene(AppScene scene) const {
     return scene_manager_search_and_switch_to_another_scene(
-        *m_scene_manager, FuriEnumParam(scene));
+        *m_scene_manager, furi_enum_param(scene));
 }
 
 void DigitalClockApp::NextScene(AppScene scene) const {
-    scene_manager_next_scene(*m_scene_manager, FuriEnumParam(scene));
+    scene_manager_next_scene(*m_scene_manager, furi_enum_param(scene));
 }
 
 void DigitalClockApp::StartTickTockTimer() {

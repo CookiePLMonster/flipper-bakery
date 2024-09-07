@@ -27,7 +27,7 @@ private:
     static void OnDraw(Canvas* canvas, const Model& model);
 
 private:
-    outer_type* GetOuter() const;
+    outer_type* get_outer() const;
 
 private:
     cookie::ViewModel<Model> m_view;

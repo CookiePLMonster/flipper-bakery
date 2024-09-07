@@ -26,7 +26,7 @@ private:
 
     void FinishSplash();
 
-    outer_type* GetOuter() const;
+    outer_type* get_outer() const;
 
 private:
     cookie::ViewModel<Model> m_view;

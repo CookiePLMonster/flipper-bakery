@@ -9,7 +9,7 @@ static constexpr uint32_t TEXT_SWITCH_PERIOD_MS = 1000;
 
 InitView::InitView()
     : m_splash_stage_timer(
-          GetOuter()->GetEventLoop(),
+          get_outer()->GetEventLoop(),
           [](void* context) {
               InitView* view = reinterpret_cast<InitView*>(context);
               view->OnStageTimerTimeout();
@@ -72,7 +72,7 @@ void InitView::OnDraw(Canvas* canvas, const Model& model) {
 
 void InitView::FinishSplash() {
     furi_event_loop_timer_stop(*m_splash_stage_timer);
-    GetOuter()->SendAppEvent(AppLogicEvent::GoToNextScene);
+    get_outer()->SendAppEvent(AppLogicEvent::GoToNextScene);
 }
 
 IMPLEMENT_GET_OUTER(InitView);

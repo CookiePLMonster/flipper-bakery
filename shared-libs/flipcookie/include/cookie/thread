@@ -11,6 +11,10 @@ namespace cookie {
 
 namespace details::thread {
 struct allocator {
+    FURI_ALWAYS_INLINE ::FuriThread* operator()() const {
+        return ::furi_thread_alloc();
+    }
+
     FURI_ALWAYS_INLINE ::FuriThread* operator()(
         const char* name,
         uint32_t stack_size,

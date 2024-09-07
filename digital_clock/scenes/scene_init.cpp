@@ -15,7 +15,7 @@ void scene_init_on_exit(void* context) {
 bool scene_init_on_event(void* context, SceneManagerEvent event) {
     DigitalClockApp* app = static_cast<DigitalClockApp*>(context);
     if(event.type == SceneManagerEventTypeCustom &&
-       event.event == cookie::FuriEnumParam(AppLogicEvent::GoToNextScene)) {
+       event.event == cookie::furi_enum_param(AppLogicEvent::GoToNextScene)) {
         app->StartTickTockTimer();
         return app->SearchAndSwitchToAnotherScene(AppScene::Clock);
     }
