@@ -37,9 +37,9 @@ DigitalClockApp::DigitalClockApp() {
         },
         this);
 
-    view_dispatcher_set_event_callback_context(*m_view_dispatcher, this);
-    view_dispatcher_set_custom_event_callback(*m_view_dispatcher, &CustomEventCallback);
-    view_dispatcher_set_navigation_event_callback(*m_view_dispatcher, &BackEventCallback);
+    view_dispatcher_install_scene_manager<
+        ViewDispatcherInstallOptions::Back | ViewDispatcherInstallOptions::Custom>(
+        *m_view_dispatcher, *m_scene_manager);
 
     // TODO: Similarly to the above, consider cookie::ViewDispatcher::ViewCookie that
     // automatically removes the view. Should again be an empty class.
@@ -133,14 +133,4 @@ void DigitalClockApp::StopTickTockTimer() {
 
 ::FuriEventLoop* DigitalClockApp::GetEventLoop() const {
     return view_dispatcher_get_event_loop(*m_view_dispatcher);
-}
-
-bool DigitalClockApp::CustomEventCallback(void* context, uint32_t event) {
-    DigitalClockApp* app = reinterpret_cast<DigitalClockApp*>(context);
-    return scene_manager_handle_custom_event(*app->m_scene_manager, event);
-}
-
-bool DigitalClockApp::BackEventCallback(void* context) {
-    DigitalClockApp* app = reinterpret_cast<DigitalClockApp*>(context);
-    return scene_manager_handle_back_event(*app->m_scene_manager);
 }

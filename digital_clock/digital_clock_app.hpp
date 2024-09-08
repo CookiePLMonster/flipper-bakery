@@ -42,10 +42,6 @@ public:
     ::FuriEventLoop* GetEventLoop() const;
 
 private:
-    static bool CustomEventCallback(void* context, uint32_t event);
-    static bool BackEventCallback(void* context);
-
-private:
     cookie::Gui m_gui;
 
     cookie::ViewDispatcher m_view_dispatcher{m_gui};

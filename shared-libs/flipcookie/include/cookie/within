@@ -13,11 +13,11 @@
 // 4. In the inner class .cpp file, use IMPLEMENT_GET_OUTER() to create an implementation
 namespace cookie {
 
-template <typename A, typename B>
+template <typename InnerT, typename OuterT>
 class Within {
 public:
-    using inner_type = A;
-    using outer_type = B;
+    using inner_type = InnerT;
+    using outer_type = OuterT;
 };
 
 template <typename T>

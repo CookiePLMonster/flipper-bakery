@@ -4,6 +4,7 @@
 
 #include <furi/core/common_defines.h>
 #include <gui/view_dispatcher.h>
+#include <gui/scene_manager.h>
 
 #include <cookie/furi_ptr>
 #include <cookie/gui/gui>
@@ -35,4 +36,56 @@ using ViewDispatcher = furi_ptr<
     ::ViewDispatcher,
     details::view_dispatcher::allocator,
     details::view_dispatcher::deleter>;
+
+// Helper function to set tick/back/custom event handlers for SceneManager
+enum class ViewDispatcherInstallOptions {
+    Back = 1 << 0,
+    Custom = 1 << 1,
+    Tick = 1 << 2,
+    All = Back | Custom | Tick
 };
+
+inline constexpr ViewDispatcherInstallOptions
+    operator|(ViewDispatcherInstallOptions lhs, ViewDispatcherInstallOptions rhs) {
+    return static_cast<ViewDispatcherInstallOptions>(
+        static_cast<unsigned>(lhs) | static_cast<unsigned>(rhs));
+}
+inline constexpr ViewDispatcherInstallOptions
+    operator&(ViewDispatcherInstallOptions lhs, ViewDispatcherInstallOptions rhs) {
+    return static_cast<ViewDispatcherInstallOptions>(
+        static_cast<unsigned>(lhs) & static_cast<unsigned>(rhs));
+}
+
+template <ViewDispatcherInstallOptions install_options = ViewDispatcherInstallOptions::All>
+inline void view_dispatcher_install_scene_manager(
+    ::ViewDispatcher* view_dispatcher,
+    ::SceneManager* scene_manager,
+    uint32_t tick_period = 0) {
+    view_dispatcher_set_event_callback_context(view_dispatcher, scene_manager);
+
+    if constexpr(static_cast<unsigned int>(install_options & ViewDispatcherInstallOptions::Back) != 0) {
+        view_dispatcher_set_navigation_event_callback(view_dispatcher, [](void* context) {
+            ::SceneManager* scene_manager = static_cast<::SceneManager*>(context);
+            return scene_manager_handle_back_event(scene_manager);
+        });
+    }
+    if constexpr(
+        static_cast<unsigned int>(install_options & ViewDispatcherInstallOptions::Custom) != 0) {
+        view_dispatcher_set_custom_event_callback(
+            view_dispatcher, [](void* context, uint32_t event) {
+                ::SceneManager* scene_manager = static_cast<::SceneManager*>(context);
+                return scene_manager_handle_custom_event(scene_manager, event);
+            });
+    }
+    if constexpr(static_cast<unsigned int>(install_options & ViewDispatcherInstallOptions::Tick) != 0) {
+        view_dispatcher_set_tick_event_callback(
+            view_dispatcher,
+            [](void* context) {
+                ::SceneManager* scene_manager = static_cast<::SceneManager*>(context);
+                scene_manager_handle_tick_event(scene_manager);
+            },
+            tick_period);
+    }
+}
+
+}
