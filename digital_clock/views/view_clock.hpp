@@ -17,8 +17,14 @@ public:
 
 private:
     struct Model {
-        uint8_t hour_bcd, minute_bcd, second_bcd;
+        Model(bool twelve_hour_clock)
+            : twelve_hour_clock(twelve_hour_clock) {
+        }
+
+        uint8_t hour, minute, second;
         uint8_t tenths_of_second;
+
+        const bool twelve_hour_clock;
     };
 
     void OnEnter();

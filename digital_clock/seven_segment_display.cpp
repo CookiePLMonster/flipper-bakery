@@ -16,11 +16,56 @@ static constexpr uint32_t GLYPH_SPACING = HOR_SEGMENT_LENGTH + (DIGIT_GAP * 2);
 static constexpr uint32_t COLON_SPACING = COLON_THICKNESS * 2;
 
 uint32_t
-    SevenSegmentDisplay::DrawNumberBCD(Canvas* canvas, uint32_t num_bcd, int32_t x, int32_t y) {
+    SevenSegmentDisplay::DrawNumberBCD(Canvas* canvas, uint8_t num_bcd, int32_t x, int32_t y) {
     const uint8_t first = (num_bcd >> 4) & 0xF;
     const uint8_t second = num_bcd & 0xF;
     uint32_t result = DrawDigit(canvas, first, x, y);
     result += DrawDigit(canvas, second, x + GLYPH_SPACING, y);
+    return result;
+}
+
+uint32_t SevenSegmentDisplay::DrawNumber(
+    Canvas* canvas,
+    uint32_t num,
+    int32_t x,
+    int32_t y,
+    uint8_t min_digits,
+    bool pad_with_space) {
+    uint32_t result = 0;
+
+    // First count the digits and pad with either zeroes or spaces
+    uint8_t total_digits = 0;
+    {
+        uint32_t temp_num = num;
+        do {
+            total_digits++;
+            temp_num /= 10;
+        } while(temp_num != 0);
+    }
+
+    if(total_digits < min_digits) {
+        const uint8_t num_padding = min_digits - total_digits;
+        if(pad_with_space) {
+            const uint32_t spacing = num_padding * GLYPH_SPACING;
+            result += spacing;
+            x += spacing;
+        } else {
+            for(uint8_t i = 0; i < num_padding; ++i) {
+                result += DrawDigit(canvas, 0, x, y);
+                x += GLYPH_SPACING;
+            }
+        }
+    }
+
+    // Draw from the right
+    x += (GLYPH_SPACING * total_digits);
+
+    do {
+        const uint8_t digit = num % 10;
+        num /= 10;
+        result += DrawDigit(canvas, digit, x - GLYPH_SPACING, y);
+        x -= GLYPH_SPACING;
+    } while(num != 0);
     return result;
 }
 

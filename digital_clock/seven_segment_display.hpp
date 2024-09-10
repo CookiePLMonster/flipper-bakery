@@ -8,7 +8,15 @@ class SevenSegmentDisplay {
 public:
     // All public routines return the width of the element drawn, with padding
     // Passing a null canvas draws nothing and returns the width of the elements that would have been drawn
-    static uint32_t DrawNumberBCD(Canvas* canvas, uint32_t num_bcd, int32_t x, int32_t y);
+    static uint32_t DrawNumberBCD(Canvas* canvas, uint8_t num_bcd, int32_t x, int32_t y);
+    // min_digits > 0 - adds at least as many trailing zeroes
+    static uint32_t DrawNumber(
+        Canvas* canvas,
+        uint32_t num,
+        int32_t x,
+        int32_t y,
+        uint8_t min_digits = 1,
+        bool pad_with_space = false);
     static uint32_t DrawColon(Canvas* canvas, int32_t x, int32_t y);
 
     // TODO: cookie::StringView, for now use a C string

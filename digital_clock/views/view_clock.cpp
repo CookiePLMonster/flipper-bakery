@@ -6,12 +6,15 @@
 #include <gui/canvas.h>
 #include <stm32wbxx_ll_rtc.h>
 
+#include <furi_hal_rtc.h>
+
 #include <cookie/common>
 
 static constexpr uint32_t TIME_UPDATE_PERIOD_MS = 500;
 
 DigitalClockView::DigitalClockView()
-    : PREDIV_S(LL_RTC_GetSynchPrescaler(RTC)) {
+    : m_view(furi_hal_rtc_get_locale_timeformat() == FuriHalRtcLocaleTimeFormat12h)
+    , PREDIV_S(LL_RTC_GetSynchPrescaler(RTC)) {
     view_set_context(*m_view, this);
     view_set_draw_callback(*m_view, [](Canvas* canvas, void* mdl) {
         const Model* model = reinterpret_cast<const Model*>(mdl);
@@ -56,9 +59,9 @@ void DigitalClockView::OnTimeUpdate() {
     const uint8_t tenths_of_second = ((PREDIV_S - subsecond) * 10) / (PREDIV_S + 1);
 
     cookie::with_view_model(*m_view, [time, tenths_of_second](Model& model) {
-        model.hour_bcd = __LL_RTC_GET_HOUR(time);
-        model.minute_bcd = __LL_RTC_GET_MINUTE(time);
-        model.second_bcd = __LL_RTC_GET_SECOND(time);
+        model.hour = __LL_RTC_CONVERT_BCD2BIN(__LL_RTC_GET_HOUR(time));
+        model.minute = __LL_RTC_CONVERT_BCD2BIN(__LL_RTC_GET_MINUTE(time));
+        model.second = __LL_RTC_CONVERT_BCD2BIN(__LL_RTC_GET_SECOND(time));
         model.tenths_of_second = tenths_of_second;
     });
 }
@@ -66,18 +69,34 @@ void DigitalClockView::OnTimeUpdate() {
 void DigitalClockView::OnDraw(Canvas* canvas, const Model& model) {
     canvas_clear(canvas);
 
-    int32_t cur_x = 4;
+    int32_t cur_x;
     const int32_t cur_y = 24;
 
     const bool show_colon = model.tenths_of_second < 5;
 
-    cur_x += SevenSegmentDisplay::DrawNumberBCD(canvas, model.hour_bcd, cur_x, cur_y);
+    bool is_pm = model.hour >= 12;
+    if(!model.twelve_hour_clock) {
+        cur_x = 4;
+        cur_x += SevenSegmentDisplay::DrawNumber(canvas, model.hour, cur_x, cur_y, 2);
+    } else {
+        uint8_t hour_12h = model.hour % 12;
+        if(hour_12h == 0) {
+            hour_12h = 12;
+        }
+        cur_x = 0;
+        cur_x += SevenSegmentDisplay::DrawNumber(canvas, hour_12h, cur_x, cur_y, 2, true);
+    }
     cur_x += SevenSegmentDisplay::DrawColon(show_colon ? canvas : nullptr, cur_x, cur_y);
 
-    cur_x += SevenSegmentDisplay::DrawNumberBCD(canvas, model.minute_bcd, cur_x, cur_y);
+    cur_x += SevenSegmentDisplay::DrawNumber(canvas, model.minute, cur_x, cur_y, 2);
     cur_x += SevenSegmentDisplay::DrawColon(show_colon ? canvas : nullptr, cur_x, cur_y);
 
-    cur_x += SevenSegmentDisplay::DrawNumberBCD(canvas, model.second_bcd, cur_x, cur_y);
+    cur_x += SevenSegmentDisplay::DrawNumber(canvas, model.second, cur_x, cur_y, 2);
+    if(model.twelve_hour_clock) {
+        canvas_set_font(canvas, FontSecondary);
+        canvas_draw_str_aligned(
+            canvas, 128, cur_y - 1, AlignRight, AlignBottom, is_pm ? "PM" : "AM");
+    }
 }
 
 IMPLEMENT_GET_OUTER(DigitalClockView);
