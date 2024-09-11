@@ -6,6 +6,7 @@
 #include <gui/view_dispatcher.h>
 #include <gui/scene_manager.h>
 
+#include <cookie/common>
 #include <cookie/furi_ptr>
 #include <cookie/gui/gui>
 
@@ -44,17 +45,7 @@ enum class ViewDispatcherInstallOptions {
     Tick = 1 << 2,
     All = Back | Custom | Tick
 };
-
-inline constexpr ViewDispatcherInstallOptions
-    operator|(ViewDispatcherInstallOptions lhs, ViewDispatcherInstallOptions rhs) {
-    return static_cast<ViewDispatcherInstallOptions>(
-        static_cast<unsigned>(lhs) | static_cast<unsigned>(rhs));
-}
-inline constexpr ViewDispatcherInstallOptions
-    operator&(ViewDispatcherInstallOptions lhs, ViewDispatcherInstallOptions rhs) {
-    return static_cast<ViewDispatcherInstallOptions>(
-        static_cast<unsigned>(lhs) & static_cast<unsigned>(rhs));
-}
+IMPLEMENT_BITWISE_ENUM_CLASS_OPS(ViewDispatcherInstallOptions);
 
 template <ViewDispatcherInstallOptions install_options = ViewDispatcherInstallOptions::All>
 inline void view_dispatcher_install_scene_manager(

@@ -24,10 +24,6 @@ DigitalClockView::DigitalClockView()
         DigitalClockView* view = reinterpret_cast<DigitalClockView*>(context);
         view->OnEnter();
     });
-    view_set_exit_callback(*m_view, [](void* context) {
-        DigitalClockView* view = reinterpret_cast<DigitalClockView*>(context);
-        view->OnExit();
-    });
     view_set_custom_callback(*m_view, [](uint32_t event, void* context) {
         DigitalClockView* view = reinterpret_cast<DigitalClockView*>(context);
         if(event == cookie::furi_enum_param(AppLogicEvent::TickTock)) {
@@ -39,9 +35,6 @@ DigitalClockView::DigitalClockView()
 
 void DigitalClockView::OnEnter() {
     OnTimeUpdate();
-}
-
-void DigitalClockView::OnExit() {
 }
 
 void DigitalClockView::OnTimeUpdate() {

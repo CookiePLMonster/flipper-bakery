@@ -28,7 +28,6 @@ private:
     };
 
     void OnEnter();
-    void OnExit();
     void OnTimeUpdate();
     static void OnDraw(Canvas* canvas, const Model& model);
 

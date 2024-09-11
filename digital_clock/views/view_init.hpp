@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cookie/coroutine>
 #include <cookie/event_loop>
 #include <cookie/within>
 #include <cookie/gui/view>
@@ -15,22 +16,20 @@ public:
     }
 
 private:
+    using SplashTask = cookie::SkippableTask<cookie::FuriEventLoopTimer>;
+
     struct Model {
         bool display_second_line;
     };
 
     void OnEnter();
-    void OnExit();
-    void OnStageTimerTimeout();
     static void OnDraw(Canvas* canvas, const Model& model);
 
-    void FinishSplash();
+    SplashTask ProcessSplashAsync(::FuriEventLoop* event_loop);
 
     outer_type* get_outer() const;
 
 private:
     cookie::ViewModel<Model> m_view;
-
-    cookie::FuriEventLoopTimer m_splash_stage_timer;
-    uint32_t m_splash_stage;
+    SplashTask m_splash_task;
 };

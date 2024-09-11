@@ -7,15 +7,7 @@
 
 static constexpr uint32_t TEXT_SWITCH_PERIOD_MS = 1000;
 
-InitView::InitView()
-    : m_splash_stage_timer(
-          get_outer()->GetEventLoop(),
-          [](void* context) {
-              InitView* view = reinterpret_cast<InitView*>(context);
-              view->OnStageTimerTimeout();
-          },
-          FuriEventLoopTimerTypePeriodic,
-          this) {
+InitView::InitView() {
     view_set_context(*m_view, this);
     view_set_draw_callback(*m_view, [](Canvas* canvas, void* mdl) {
         const Model* model = reinterpret_cast<const Model*>(mdl);
@@ -25,14 +17,10 @@ InitView::InitView()
         InitView* view = reinterpret_cast<InitView*>(context);
         view->OnEnter();
     });
-    view_set_exit_callback(*m_view, [](void* context) {
-        InitView* view = reinterpret_cast<InitView*>(context);
-        view->OnExit();
-    });
     view_set_input_callback(*m_view, [](InputEvent* event, void* context) {
         if(event->type == InputTypeShort && event->key == InputKeyOk) {
             InitView* view = reinterpret_cast<InitView*>(context);
-            view->FinishSplash();
+            view->m_splash_task.Skip();
             return true;
         }
         return false;
@@ -40,21 +28,7 @@ InitView::InitView()
 }
 
 void InitView::OnEnter() {
-    m_splash_stage = 0;
-    furi_event_loop_timer_start(*m_splash_stage_timer, furi_ms_to_ticks(TEXT_SWITCH_PERIOD_MS));
-}
-
-void InitView::OnExit() {
-    furi_event_loop_timer_stop(*m_splash_stage_timer);
-}
-
-void InitView::OnStageTimerTimeout() {
-    m_splash_stage++;
-    if(m_splash_stage == 1) {
-        cookie::with_view_model(*m_view, [](Model& model) { model.display_second_line = true; });
-    } else {
-        FinishSplash();
-    }
+    m_splash_task = ProcessSplashAsync(get_outer()->GetEventLoop());
 }
 
 void InitView::OnDraw(Canvas* canvas, const Model& model) {
@@ -70,8 +44,13 @@ void InitView::OnDraw(Canvas* canvas, const Model& model) {
         (64 - SevenSegmentDisplay::GetGlyphHeight()) / 2);
 }
 
-void InitView::FinishSplash() {
-    furi_event_loop_timer_stop(*m_splash_stage_timer);
+auto InitView::ProcessSplashAsync([[maybe_unused]] ::FuriEventLoop* event_loop) -> SplashTask {
+    // Don't bother updating the model if we skipped the wait
+    if(co_yield std::chrono::seconds(1)) {
+        cookie::with_view_model(*m_view, [](Model& model) { model.display_second_line = true; });
+
+        co_yield std::chrono::seconds(1);
+    }
     get_outer()->SendAppEvent(AppLogicEvent::GoToNextScene);
 }
 
