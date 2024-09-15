@@ -1,10 +1,17 @@
 // <common> -*- C++ -*-
 
-#pragma once
+// This header is special - it's made to be included multiple times,
+// so more features could be enabled it necessary
 
+#ifndef _COOKIE_COMMON_HAS_COMMON_DEFINES
+#define _COOKIE_COMMON_HAS_COMMON_DEFINES 1
 #include <furi/core/common_defines.h>
+#endif
 
 namespace cookie {
+
+#ifndef _COOKIE_COMMON_HAS_SCOPED_FURI_CRITICAL
+#define _COOKIE_COMMON_HAS_SCOPED_FURI_CRITICAL 1
 
 // RAII for FURI_CRITICAL
 class ScopedFuriCritical {
@@ -21,15 +28,33 @@ private:
     __FuriCriticalInfo m_info;
 };
 
+#endif
+
+#ifndef _COOKIE_COMMON_HAS_FURI_ENUM_PARAM
+#define _COOKIE_COMMON_HAS_FURI_ENUM_PARAM 1
+
 // Function to allow passing C++11 enum classes as Furi uint32_t parameters
 template <typename T>
 inline constexpr uint32_t furi_enum_param(T val) {
     return static_cast<uint32_t>(val);
 }
 
+#endif
+
+// Converts std::chrono::milliseconds (or anything that can cast to it) to ticks
+#if !defined(_COOKIE_COMMON_HAS_FURI_CHRONO) && defined(_GLIBCXX_CHRONO) && _GLIBCXX_CHRONO == 1
+#define _COOKIE_COMMON_HAS_FURI_CHRONO
+
+uint32_t furi_chrono_duration_to_ticks(std::chrono::milliseconds ms) {
+    return furi_ms_to_ticks(ms.count());
+}
+
+#endif
+
 }
 
 // Macro to implement bitwise operations for enum classes
+#ifndef IMPLEMENT_BITWISE_ENUM_CLASS_OPS
 #define IMPLEMENT_BITWISE_ENUM_CLASS_OPS(class_name)                                             \
     inline constexpr class_name operator|(class_name lhs, class_name rhs) {                      \
         return static_cast<class_name>(static_cast<unsigned>(lhs) | static_cast<unsigned>(rhs)); \
@@ -37,8 +62,16 @@ inline constexpr uint32_t furi_enum_param(T val) {
                                                                                                  \
     inline constexpr class_name operator&(class_name lhs, class_name rhs) {                      \
         return static_cast<class_name>(static_cast<unsigned>(lhs) & static_cast<unsigned>(rhs)); \
+    }                                                                                            \
+    inline constexpr class_name& operator|=(class_name& lhs, class_name rhs) {                   \
+        return lhs = lhs | rhs;                                                                  \
+    }                                                                                            \
+    inline constexpr class_name& operator&=(class_name& lhs, class_name rhs) {                   \
+        return lhs = lhs & rhs;                                                                  \
     }
+#endif
 
+#ifndef IMPLEMENT_FRIEND_BITWISE_ENUM_CLASS_OPS
 #define IMPLEMENT_FRIEND_BITWISE_ENUM_CLASS_OPS(class_name)                                      \
     friend inline constexpr class_name operator|(class_name lhs, class_name rhs) {               \
         return static_cast<class_name>(static_cast<unsigned>(lhs) | static_cast<unsigned>(rhs)); \
@@ -46,4 +79,11 @@ inline constexpr uint32_t furi_enum_param(T val) {
                                                                                                  \
     friend inline constexpr class_name operator&(class_name lhs, class_name rhs) {               \
         return static_cast<class_name>(static_cast<unsigned>(lhs) & static_cast<unsigned>(rhs)); \
+    }                                                                                            \
+    friend inline constexpr class_name& operator|=(class_name& lhs, class_name rhs) {            \
+        return lhs = lhs | rhs;                                                                  \
+    }                                                                                            \
+    friend inline constexpr class_name& operator&=(class_name& lhs, class_name rhs) {            \
+        return lhs = lhs & rhs;                                                                  \
     }
+#endif

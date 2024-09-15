@@ -5,9 +5,13 @@
 
 #include <gui/canvas.h>
 
+#include <chrono>
+#include <cookie/common>
+
 static constexpr uint32_t TEXT_SWITCH_PERIOD_MS = 1000;
 
-InitView::InitView() {
+InitView::InitView()
+    : m_splash_timer(get_outer()->GetEventLoop()) {
     view_set_context(*m_view, this);
     view_set_draw_callback(*m_view, [](Canvas* canvas, void* mdl) {
         const Model* model = reinterpret_cast<const Model*>(mdl);
@@ -17,10 +21,14 @@ InitView::InitView() {
         InitView* view = reinterpret_cast<InitView*>(context);
         view->OnEnter();
     });
+    view_set_exit_callback(*m_view, [](void* context) {
+        InitView* view = reinterpret_cast<InitView*>(context);
+        view->OnExit();
+    });
     view_set_input_callback(*m_view, [](InputEvent* event, void* context) {
         if(event->type == InputTypeShort && event->key == InputKeyOk) {
             InitView* view = reinterpret_cast<InitView*>(context);
-            view->m_splash_task.Skip();
+            view->m_splash_timer.wake_up(true);
             return true;
         }
         return false;
@@ -28,7 +36,11 @@ InitView::InitView() {
 }
 
 void InitView::OnEnter() {
-    m_splash_task = ProcessSplashAsync(get_outer()->GetEventLoop());
+    m_splash_task = ProcessSplashAsync();
+}
+
+void InitView::OnExit() {
+    m_splash_task.reset();
 }
 
 void InitView::OnDraw(Canvas* canvas, const Model& model) {
@@ -44,12 +56,14 @@ void InitView::OnDraw(Canvas* canvas, const Model& model) {
         (64 - SevenSegmentDisplay::GetGlyphHeight()) / 2);
 }
 
-auto InitView::ProcessSplashAsync([[maybe_unused]] ::FuriEventLoop* event_loop) -> SplashTask {
+cookie::Task<> InitView::ProcessSplashAsync() {
+    using namespace std::chrono_literals;
+
     // Don't bother updating the model if we skipped the wait
-    if(co_yield std::chrono::seconds(1)) {
+    if(co_await m_splash_timer.await_delay(cookie::furi_chrono_duration_to_ticks(1s))) {
         cookie::with_view_model(*m_view, [](Model& model) { model.display_second_line = true; });
 
-        co_yield std::chrono::seconds(1);
+        co_await m_splash_timer.await_delay(cookie::furi_chrono_duration_to_ticks(1s));
     }
     get_outer()->SendAppEvent(AppLogicEvent::GoToNextScene);
 }

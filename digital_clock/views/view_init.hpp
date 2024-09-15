@@ -16,20 +16,20 @@ public:
     }
 
 private:
-    using SplashTask = cookie::SkippableTask<cookie::FuriEventLoopTimer>;
-
     struct Model {
         bool display_second_line;
     };
 
     void OnEnter();
+    void OnExit();
     static void OnDraw(Canvas* canvas, const Model& model);
 
-    SplashTask ProcessSplashAsync(::FuriEventLoop* event_loop);
+    cookie::Task<> ProcessSplashAsync();
 
     outer_type* get_outer() const;
 
 private:
     cookie::ViewModel<Model> m_view;
-    SplashTask m_splash_task;
+    cookie::AwaitableTimer<cookie::FuriEventLoopTimer> m_splash_timer;
+    cookie::Task<> m_splash_task;
 };

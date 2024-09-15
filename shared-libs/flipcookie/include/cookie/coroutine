@@ -3,7 +3,6 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
 #include <coroutine>
 
 #include "common"
@@ -13,16 +12,26 @@
 // Task type for C++ coroutines, suitable for use on Flipper.
 // Not using any Furi naming, since it is unrelated to
 // Furi primitives or FreeRTOS coroutines.
-// cookie::Task<T> is to be used as a generic return object from a coroutine,
-// you'll probably want to use it unless you need something more specialized.
-// cookie::SkippableTask<T> spawns a timer (or event loop timer) that can be used
-// to asynchronously delay the coroutine, with an option to skip early.
 namespace cookie {
 
 namespace details::coroutine {
 
 template <typename T>
 concept is_timer_type = std::same_as<T, FuriTimer> || std::same_as<T, FuriEventLoopTimer>;
+
+// Workaround for the lack of `furi_event_loop_timer_get_owner()` - empty class for FuriTimer,
+// a class storing FuriEventLoop* for FuriEventLoopTimer
+template <typename T>
+struct event_loop_field {};
+
+template <>
+struct event_loop_field<::FuriEventLoopTimer*> {
+    event_loop_field(::FuriEventLoop* event_loop)
+        : m_event_loop(event_loop) {
+    }
+
+    ::FuriEventLoop* m_event_loop;
+};
 
 template <typename T>
 struct timer_start_stop;
@@ -36,6 +45,14 @@ struct timer_start_stop<::FuriTimer*> {
     static void stop(::FuriTimer* timer) {
         ::furi_timer_stop(timer);
     }
+
+    static void pend(
+        [[maybe_unused]] const event_loop_field<::FuriTimer*>& event_loop,
+        FuriTimerPendigCallback callback,
+        void* context,
+        uint32_t arg = 0) {
+        ::furi_timer_pending_callback(callback, context, arg);
+    }
 };
 
 template <>
@@ -47,82 +64,152 @@ struct timer_start_stop<::FuriEventLoopTimer*> {
     static void stop(::FuriEventLoopTimer* timer) {
         ::furi_event_loop_timer_stop(timer);
     }
+
+    static void pend(
+        const event_loop_field<::FuriEventLoopTimer*>& event_loop,
+        FuriEventLoopPendingCallback callback,
+        void* context,
+        [[maybe_unused]] uint32_t arg = 0) {
+        ::furi_event_loop_pend_callback(event_loop.m_event_loop, callback, context);
+    }
 };
 
 }
 
-// Coroutine return type
-// TODO: Support return types! For now, this is a void task
-struct Task {
+// Awaitable timer type. Calling co_await obj.await_delay(interval) on it suspends the coroutine
+// for a specified time, but can additionally also be woken up (e.g. from input) by calling obj.wake_up().
+template <details::coroutine::is_timer_type T = FuriTimer>
+class AwaitableTimer {
+public:
+    using timer_type = T;
+    using timer_furi_type = typename timer_type::pointer;
+    using event_loop_field = details::coroutine::event_loop_field<timer_furi_type>;
+    using timer_start_stop = details::coroutine::timer_start_stop<timer_furi_type>;
+
+    AwaitableTimer()
+    requires std::same_as<timer_type, FuriTimer>
+        : m_timer(timer_callback, FuriTimerTypeOnce, &m_awaiting_handle_ptr) {
+    }
+
+    AwaitableTimer(::FuriEventLoop* event_loop)
+    requires std::same_as<timer_type, FuriEventLoopTimer>
+        : m_timer(event_loop, timer_callback, FuriEventLoopTimerTypeOnce, &m_awaiting_handle_ptr)
+        , m_event_loop(event_loop) {
+    }
+
+    void wake_up(bool keep_awake_forever = false) {
+        StateFlags new_flags(StateFlags::Skipped);
+        if(keep_awake_forever) {
+            new_flags |= StateFlags::KeepAwakeForever;
+        }
+        m_state_flags.store(new_flags, std::memory_order_relaxed);
+
+        timer_start_stop::stop(*m_timer);
+        std::coroutine_handle<>* current_handle =
+            m_awaiting_handle_ptr.exchange(nullptr, std::memory_order_relaxed);
+        if(current_handle != nullptr) {
+            timer_start_stop::pend(m_event_loop, timer_pend_callback, current_handle->address());
+        }
+    }
+
+    void start(std::coroutine_handle<>* handle_ptr, uint32_t interval) {
+        m_awaiting_handle_ptr.store(handle_ptr, std::memory_order_relaxed);
+        timer_start_stop::start(*m_timer, interval);
+    }
+
+    bool stop() {
+        timer_start_stop::stop(*m_timer);
+        m_awaiting_handle_ptr.store(nullptr, std::memory_order_relaxed);
+
+        // Return true if the timer was skipped
+        StateFlags flags = static_cast<StateFlags>(m_state_flags.load(std::memory_order_relaxed));
+        if(flags & StateFlags::KeepAwakeForever) {
+            return true;
+        }
+        return (m_state_flags.exchange(0, std::memory_order_relaxed) & StateFlags::Skipped) != 0;
+    }
+
+    auto await_delay(uint32_t interval) {
+        struct AwaitDelayAwaiter {
+            AwaitDelayAwaiter(AwaitableTimer* timer, uint32_t interval)
+                : m_timer(timer)
+                , m_interval(interval) {
+            }
+
+            bool await_ready() const {
+                return (m_timer->m_state_flags.load(std::memory_order_relaxed) &
+                        StateFlags::KeepAwakeForever) != 0;
+            }
+
+            void await_suspend(std::coroutine_handle<> h) {
+                m_awaiting_coroutine = h;
+                m_timer->start(&m_awaiting_coroutine, m_interval);
+            }
+
+            bool await_resume() {
+                const bool was_skipped = m_timer->stop();
+                // Return true if timed out, false if skipped
+                return !was_skipped;
+            }
+
+        private:
+            std::coroutine_handle<> m_awaiting_coroutine;
+            AwaitableTimer* m_timer;
+            uint32_t m_interval;
+        };
+        return AwaitDelayAwaiter(this, interval);
+    }
+
+private:
+    static void timer_callback(void* context) {
+        auto handle_ptr = reinterpret_cast<std::atomic<std::coroutine_handle<>*>*>(context);
+        std::coroutine_handle<>* current_handle =
+            handle_ptr->exchange(nullptr, std::memory_order_relaxed);
+        if(current_handle != nullptr) {
+            current_handle->resume();
+        }
+    }
+
+    static void timer_pend_callback(void* context) {
+        std::coroutine_handle<> handle = std::coroutine_handle<>::from_address(context);
+        handle.resume();
+    }
+
+    // Overload for FuriTimer*
+    static void timer_pend_callback(void* context, [[maybe_unused]] uint32_t arg) {
+        timer_pend_callback(context);
+    }
+
+private:
+    enum StateFlags : uint8_t {
+        Skipped = 1 << 0,
+        KeepAwakeForever = 1 << 1,
+    };
+    IMPLEMENT_FRIEND_BITWISE_ENUM_CLASS_OPS(StateFlags)
+
+    timer_type m_timer;
+    // Workaround for the lack of furi_event_loop_timer_get_owner
+    [[no_unique_address]] event_loop_field m_event_loop;
+    std::atomic<std::coroutine_handle<>*> m_awaiting_handle_ptr{};
+    std::atomic<uint8_t> m_state_flags{};
+};
+
+// Generic task type. Contrary to what is allowed in C++ apps targeting more elaborate systems,
+// this return object MUST be stored somewhere, preferably an object. The lifetime of the coroutine
+// is ALWAYS tied to the lifetime of this return object, fire-and-forget coroutines are NOT possible.
+// TODO2: Support return values, right now only Task<void> is supported
+template <typename T = void>
+struct [[nodiscard("The task object must be stored")]] Task {
     struct promise_type;
     using handle_type = std::coroutine_handle<promise_type>;
+    using return_type = T;
+
+    // TODO: For now we only allow Task<void>
+    static_assert(std::is_void_v<return_type>);
 
     struct promise_type {
         Task get_return_object() {
             return Task(handle_type::from_promise(*this));
-        }
-        std::suspend_always initial_suspend() {
-            return {};
-        }
-        std::suspend_always final_suspend() {
-            return {};
-        }
-        void unhandled_exception() {
-        }
-        void return_void() {
-        }
-    };
-
-    Task(handle_type handle)
-        : m_handle(handle) {
-    }
-    Task(const Task&) = delete;
-    ~Task() {
-        m_handle.destroy();
-    }
-
-private:
-    handle_type m_handle;
-};
-
-// Skippable and awaitable task
-// Can co_yield on std::chrono::milliseconds. Waits can be skipped by calling .skip().
-// This task should be stored somewhere (class member, preferably) so the lifetime is explicit.
-// Template parameter specifies the timer primitive to use
-// TODO: As with Task<T>, support return types. Remember the result may not be ready if skipped!
-template <details::coroutine::is_timer_type T>
-struct SkippableTask {
-    struct promise_type;
-    using handle_type = std::coroutine_handle<promise_type>;
-    using timer_type = T;
-
-    struct promise_type {
-        promise_type()
-        requires std::same_as<T, FuriTimer>
-            : m_await_timer(
-                  timeout_callback,
-                  FuriTimerTypeOnce,
-                  handle_type::from_promise(*this).address()) {
-        }
-
-        promise_type(::FuriEventLoop* event_loop)
-        requires std::same_as<T, FuriEventLoopTimer>
-            : m_await_timer(
-                  event_loop,
-                  timeout_callback,
-                  FuriEventLoopTimerTypeOnce,
-                  handle_type::from_promise(*this).address()) {
-        }
-
-        // Weird overload for non-static coroutines, we don't need the 'this' pointer,
-        // but we can't really ignore it more gracefully
-        promise_type([[maybe_unused]] auto ignored, ::FuriEventLoop* event_loop)
-        requires std::same_as<T, FuriEventLoopTimer>
-            : promise_type(event_loop) {
-        }
-
-        SkippableTask get_return_object() {
-            return SkippableTask(handle_type::from_promise(*this));
         }
         std::suspend_never initial_suspend() {
             return {};
@@ -134,100 +221,32 @@ struct SkippableTask {
         }
         void return_void() {
         }
-
-        auto yield_value(std::chrono::milliseconds interval) {
-            struct AwaitDelayAwaiter {
-                AwaitDelayAwaiter(uint32_t interval, std::coroutine_handle<promise_type> handle)
-                    : m_interval(interval)
-                    , m_handle(handle) {
-                }
-
-                bool await_ready() const {
-                    bool result =
-                        (m_handle.promise().m_state_flags.load(std::memory_order_acquire) &
-                         StateFlags::Skipped) != 0;
-                    return result;
-                }
-
-                bool await_suspend(std::coroutine_handle<> h) {
-                    UNUSED(h);
-                    promise_type& promise = m_handle.promise();
-                    uint8_t expected = 0;
-                    if(!promise.m_state_flags.compare_exchange_strong(
-                           expected, StateFlags::Suspended, std::memory_order_acquire)) {
-                        // Task has been skipped
-                        return false;
-                    }
-                    details::coroutine::timer_start_stop<decltype(*promise.m_await_timer)>::start(
-                        *promise.m_await_timer, m_interval);
-                    return true;
-                }
-
-                bool await_resume() const {
-                    return (m_handle.promise().m_state_flags.fetch_and(
-                                ~StateFlags::Suspended, std::memory_order_release) &
-                            StateFlags::Skipped) == 0;
-                }
-
-            private:
-                uint32_t m_interval;
-                std::coroutine_handle<promise_type> m_handle;
-            };
-            return AwaitDelayAwaiter(interval.count(), handle_type::from_promise(*this));
-        }
-
-        static void timeout_callback(void* context) {
-            handle_type handle = handle_type::from_address(context);
-            if((handle.promise().m_state_flags.load(std::memory_order_acquire) &
-                StateFlags::Skipped) == 0) {
-                handle.resume();
-            }
-        }
-
-        timer_type m_await_timer;
-
-        enum StateFlags : uint8_t {
-            Suspended = 1 << 0,
-            Skipped = 1 << 1,
-        };
-        IMPLEMENT_FRIEND_BITWISE_ENUM_CLASS_OPS(StateFlags)
-
-        std::atomic<uint8_t> m_state_flags{};
     };
 
-    SkippableTask() = default;
-    SkippableTask(handle_type handle)
+    Task() = default;
+    Task(handle_type handle)
         : m_handle(handle) {
     }
-    SkippableTask(const SkippableTask&) = delete;
-    SkippableTask(SkippableTask&& other)
+    Task(const Task&) = delete;
+    Task& operator=(const Task&) = delete;
+
+    Task(Task&& other)
         : m_handle(std::exchange(other.m_handle, nullptr)) {
     }
-    SkippableTask& operator=(SkippableTask&& other) {
-        // Maybe not the best idea to destroy the existing coroutine
-        // by force, but that should be extremely rare to begin with.
-        // Think of something better later, maybe.
-        if(m_handle) {
-            m_handle.destroy();
-        }
+    Task& operator=(Task&& other) {
+        reset();
         m_handle = std::exchange(other.m_handle, nullptr);
         return *this;
     }
 
-    ~SkippableTask() {
-        if(m_handle) {
-            m_handle.destroy();
-        }
+    ~Task() {
+        reset();
     }
 
-    void Skip() {
+    void reset() {
         if(m_handle) {
-            if(!m_handle.done() &&
-               m_handle.promise().m_state_flags.fetch_or(
-                   promise_type::StateFlags::Skipped, std::memory_order_acquire) ==
-                   promise_type::StateFlags::Suspended) {
-                m_handle.resume();
-            }
+            m_handle.destroy();
+            m_handle = nullptr;
         }
     }
 
