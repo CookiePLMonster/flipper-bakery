@@ -43,9 +43,9 @@ inline constexpr uint32_t furi_enum_param(T val) {
 
 // Converts std::chrono::milliseconds (or anything that can cast to it) to ticks
 #if !defined(_COOKIE_COMMON_HAS_FURI_CHRONO) && defined(_GLIBCXX_CHRONO) && _GLIBCXX_CHRONO == 1
-#define _COOKIE_COMMON_HAS_FURI_CHRONO
+#define _COOKIE_COMMON_HAS_FURI_CHRONO 1
 
-uint32_t furi_chrono_duration_to_ticks(std::chrono::milliseconds ms) {
+inline uint32_t furi_chrono_duration_to_ticks(std::chrono::milliseconds ms) {
     return furi_ms_to_ticks(ms.count());
 }
 

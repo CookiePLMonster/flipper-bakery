@@ -112,23 +112,6 @@ public:
         }
     }
 
-    void start(std::coroutine_handle<>* handle_ptr, uint32_t interval) {
-        m_awaiting_handle_ptr.store(handle_ptr, std::memory_order_relaxed);
-        timer_start_stop::start(*m_timer, interval);
-    }
-
-    bool stop() {
-        timer_start_stop::stop(*m_timer);
-        m_awaiting_handle_ptr.store(nullptr, std::memory_order_relaxed);
-
-        // Return true if the timer was skipped
-        StateFlags flags = static_cast<StateFlags>(m_state_flags.load(std::memory_order_relaxed));
-        if(flags & StateFlags::KeepAwakeForever) {
-            return true;
-        }
-        return (m_state_flags.exchange(0, std::memory_order_relaxed) & StateFlags::Skipped) != 0;
-    }
-
     auto await_delay(uint32_t interval) {
         struct AwaitDelayAwaiter {
             AwaitDelayAwaiter(AwaitableTimer* timer, uint32_t interval)
@@ -137,8 +120,7 @@ public:
             }
 
             bool await_ready() const {
-                return (m_timer->m_state_flags.load(std::memory_order_relaxed) &
-                        StateFlags::KeepAwakeForever) != 0;
+                return m_timer->try_clear_skip_flag();
             }
 
             void await_suspend(std::coroutine_handle<> h) {
@@ -161,6 +143,26 @@ public:
     }
 
 private:
+    void start(std::coroutine_handle<>* handle_ptr, uint32_t interval) {
+        m_awaiting_handle_ptr.store(handle_ptr, std::memory_order_relaxed);
+        timer_start_stop::start(*m_timer, interval);
+    }
+
+    bool stop() {
+        timer_start_stop::stop(*m_timer);
+        m_awaiting_handle_ptr.store(nullptr, std::memory_order_relaxed);
+
+        // Return true if the timer was skipped, either one-off or sticky
+        return try_clear_skip_flag();
+    }
+
+    // Clear the Skipped flag if it's the only one and it's set, and check the previous flags
+    bool try_clear_skip_flag() {
+        uint8_t prev_flags = StateFlags::Skipped;
+        m_state_flags.compare_exchange_strong(prev_flags, 0, std::memory_order_relaxed);
+        return prev_flags != 0;
+    }
+
     static void timer_callback(void* context) {
         auto handle_ptr = reinterpret_cast<std::atomic<std::coroutine_handle<>*>*>(context);
         std::coroutine_handle<>* current_handle =
@@ -248,6 +250,10 @@ struct [[nodiscard("The task object must be stored")]] Task {
             m_handle.destroy();
             m_handle = nullptr;
         }
+    }
+
+    bool is_active() const {
+        return m_handle != nullptr && !m_handle.done();
     }
 
 private:

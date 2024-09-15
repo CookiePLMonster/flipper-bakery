@@ -4,17 +4,20 @@
 #include "seven_segment_display.hpp"
 
 #include <gui/canvas.h>
+#include <gui/elements.h>
 #include <stm32wbxx_ll_rtc.h>
 
 #include <furi_hal_rtc.h>
 
+#include <chrono>
 #include <cookie/common>
 
-static constexpr uint32_t TIME_UPDATE_PERIOD_MS = 500;
+#include <digital_clock_icons.h>
 
-DigitalClockView::DigitalClockView()
+DigitalClockView::DigitalClockView(FuriEventLoop* event_loop)
     : m_view(furi_hal_rtc_get_locale_timeformat() == FuriHalRtcLocaleTimeFormat12h)
-    , PREDIV_S(LL_RTC_GetSynchPrescaler(RTC)) {
+    , PREDIV_S(LL_RTC_GetSynchPrescaler(RTC))
+    , m_lock_overlay(event_loop) {
     view_set_context(*m_view, this);
     view_set_draw_callback(*m_view, [](Canvas* canvas, void* mdl) {
         const Model* model = reinterpret_cast<const Model*>(mdl);
@@ -24,6 +27,10 @@ DigitalClockView::DigitalClockView()
         DigitalClockView* view = reinterpret_cast<DigitalClockView*>(context);
         view->OnEnter();
     });
+    view_set_exit_callback(*m_view, [](void* context) {
+        DigitalClockView* view = reinterpret_cast<DigitalClockView*>(context);
+        view->OnExit();
+    });
     view_set_custom_callback(*m_view, [](uint32_t event, void* context) {
         DigitalClockView* view = reinterpret_cast<DigitalClockView*>(context);
         if(event == cookie::furi_enum_param(AppLogicEvent::TickTock)) {
@@ -31,10 +38,18 @@ DigitalClockView::DigitalClockView()
         }
         return false;
     });
+    view_set_input_callback(*m_view, [](InputEvent* event, void* context) {
+        DigitalClockView* view = reinterpret_cast<DigitalClockView*>(context);
+        return view->OnInput(event);
+    });
 }
 
 void DigitalClockView::OnEnter() {
     OnTimeUpdate();
+}
+
+void DigitalClockView::OnExit() {
+    m_lock_overlay.OnExit();
 }
 
 void DigitalClockView::OnTimeUpdate() {
@@ -57,6 +72,13 @@ void DigitalClockView::OnTimeUpdate() {
         model.second = __LL_RTC_CONVERT_BCD2BIN(__LL_RTC_GET_SECOND(time));
         model.tenths_of_second = tenths_of_second;
     });
+}
+
+bool DigitalClockView::OnInput(const InputEvent* event) {
+    if(m_lock_overlay.OnInput(event)) {
+        return true;
+    }
+    return false;
 }
 
 void DigitalClockView::OnDraw(Canvas* canvas, const Model& model) {
@@ -90,6 +112,72 @@ void DigitalClockView::OnDraw(Canvas* canvas, const Model& model) {
         canvas_draw_str_aligned(
             canvas, 128, cur_y - 1, AlignRight, AlignBottom, is_pm ? "PM" : "AM");
     }
+
+    LockScreenOverlay::OnDraw(canvas, model);
+}
+
+void DigitalClockView::ShowLockScreen(bool show) {
+    cookie::with_view_model(*m_view, [show](Model& model) { model.lock_screen_shown = show; });
+}
+
+const uint32_t LOCK_TIMEOUT_TICKS =
+    cookie::furi_chrono_duration_to_ticks(std::chrono::milliseconds(600));
+constexpr uint32_t LOCK_PRESS_COUNT = 2; // Not including the initial press
+
+DigitalClockView::LockScreenOverlay::LockScreenOverlay(FuriEventLoop* event_loop)
+    : m_lock_timer(event_loop) {
+}
+
+void DigitalClockView::LockScreenOverlay::OnExit() {
+    m_lock_task.reset();
+}
+
+bool DigitalClockView::LockScreenOverlay::OnInput(const InputEvent* event) {
+    if(event->type == InputTypeShort && event->key == InputKeyBack) {
+        if(m_lock_task.is_active()) {
+            m_lock_timer.wake_up();
+        } else {
+            m_lock_task = ProcessExitInputsAsync();
+            // TODO: This may be improved with contiuations, for example:
+            // m_lock_task.then([this](bool result) { // do work... }));
+        }
+
+        return true;
+    }
+    return false;
+}
+
+void DigitalClockView::LockScreenOverlay::OnDraw(Canvas* canvas, const Model& model) {
+    if(!model.lock_screen_shown) {
+        return;
+    }
+
+    constexpr uint32_t y_shift = 13;
+
+    canvas_set_font(canvas, FontSecondary);
+    elements_bold_rounded_frame(canvas, 14, 2 + y_shift, 99, 48);
+    elements_multiline_text(canvas, 65, 20 + y_shift, "To exit\npress:");
+    canvas_set_bitmap_mode(canvas, true);
+    canvas_draw_icon(canvas, 65, 36 + y_shift, &I_Pin_back_arrow_10x8);
+    canvas_draw_icon(canvas, 80, 36 + y_shift, &I_Pin_back_arrow_10x8);
+    canvas_draw_icon(canvas, 95, 36 + y_shift, &I_Pin_back_arrow_10x8);
+    canvas_draw_icon(canvas, 16, 7 + y_shift, &I_WarningDolphin_45x42);
+    canvas_set_bitmap_mode(canvas, false);
+}
+
+cookie::Task<> DigitalClockView::LockScreenOverlay::ProcessExitInputsAsync() {
+    DigitalClockView* clock_view = get_outer();
+    clock_view->ShowLockScreen(true);
+
+    for(uint32_t i = 0; i < LOCK_PRESS_COUNT; i++) {
+        if(co_await m_lock_timer.await_delay(LOCK_TIMEOUT_TICKS)) {
+            // Timed out
+            clock_view->ShowLockScreen(false);
+            co_return;
+        }
+    }
+    clock_view->get_outer()->SendAppEvent(AppLogicEvent::ExitRequested);
 }
 
 IMPLEMENT_GET_OUTER(DigitalClockView);
+IMPLEMENT_GET_OUTER(DigitalClockView::LockScreenOverlay);

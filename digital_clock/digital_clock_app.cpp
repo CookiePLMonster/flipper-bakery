@@ -20,11 +20,9 @@ static constexpr auto TICK_TOCK_TIMER_INTERRUPT = FuriHalInterruptIdLpTim2;
 static constexpr auto TICK_TOCK_TIMER_IRQ = LPTIM2_IRQn;
 static constexpr uint32_t TICK_TOCK_TIMER_FREQ = 32768u;
 
-DigitalClockApp::DigitalClockApp() {
-    // TODO: Consider introducing cookie::FuriEventLoopSubscriptionCookie that takes pointers
-    // to subscribed elements and thus can auto-unsubscribe from the destructor at zero cost (empty class)
-    // Best to wait for that when ViewDispatcher can adopt an event loop, it'll simplify semantics
-    // (can use a pointer to cookie::FuriEventLoop in a template)
+DigitalClockApp::DigitalClockApp()
+    // TODO: This will be easier once View Dispatchers can adopt event loops
+    : m_clock_view(view_dispatcher_get_event_loop(*m_view_dispatcher)) {
     furi_event_loop_subscribe_semaphore(
         view_dispatcher_get_event_loop(*m_view_dispatcher),
         *m_tick_tock_semaphore,
@@ -41,8 +39,6 @@ DigitalClockApp::DigitalClockApp() {
         ViewDispatcherInstallOptions::Back | ViewDispatcherInstallOptions::Custom>(
         *m_view_dispatcher, *m_scene_manager);
 
-    // TODO: Similarly to the above, consider cookie::ViewDispatcher::ViewCookie that
-    // automatically removes the view. Should again be an empty class.
     view_dispatcher_add_view(
         *m_view_dispatcher, furi_enum_param(AppView::Init), *m_init_view.View());
     view_dispatcher_add_view(

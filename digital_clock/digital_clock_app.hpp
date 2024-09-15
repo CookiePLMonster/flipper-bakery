@@ -20,6 +20,7 @@ enum class AppView {
 
 enum class AppLogicEvent {
     GoToNextScene,
+    ExitRequested,
     TickTock,
 };
 

@@ -5,6 +5,7 @@ App(
     entry_point="digital_clock_app",
     stack_size=1 * 1024,
     fap_category="Tools",
+    fap_icon_assets="assets",
 
     fap_version="0.1",
     fap_icon="digital_clock.png",  # 10x10 1-bit PNG
