@@ -22,6 +22,7 @@ typedef struct {
     Gui* gui;
     Canvas* canvas;
     Cli* cli;
+    FuriThreadList* thread_list;
 
     // These are protected by the mutex
     FuriMutex* state_mutex;
@@ -143,6 +144,22 @@ static void flipper95_cli_callback(Cli* cli, FuriString* args, void* context) {
     }
 }
 
+static float flipper95_get_cpu_usage(Flipper95* instance) {
+    if(furi_thread_enumerate(instance->thread_list)) {
+        const FuriThreadListItem* thread_metrics =
+            furi_thread_list_get_or_insert(instance->thread_list, furi_thread_get_current());
+        return thread_metrics->cpu;
+    }
+    return 0.0f;
+}
+
+static float flipper95_get_mem_usage() {
+    const size_t total = memmgr_get_total_heap();
+    const size_t used = total - memmgr_get_free_heap();
+
+    return (100.0f * used) / total;
+}
+
 static void flipper95_init(Flipper95* instance) {
     instance->input = furi_record_open(RECORD_INPUT_EVENTS);
     instance->gui = furi_record_open(RECORD_GUI);
@@ -151,6 +168,8 @@ static void flipper95_init(Flipper95* instance) {
 
     instance->input_subscription =
         furi_pubsub_subscribe(instance->input, gui_input_events_callback, instance);
+
+    instance->thread_list = furi_thread_list_alloc();
 
     instance->state_mutex = furi_mutex_alloc(FuriMutexTypeNormal);
     instance->cur_mnumber = 2;
@@ -165,6 +184,8 @@ static void flipper95_init(Flipper95* instance) {
 static void flipper95_deinit(Flipper95* instance) {
     free(instance->mprime_str);
     furi_mutex_free(instance->state_mutex);
+
+    furi_thread_list_free(instance->thread_list);
 
     furi_pubsub_unsubscribe(instance->input, instance->input_subscription);
 
@@ -236,6 +257,10 @@ static void flipper95_run(Flipper95* instance) {
     mbedtls_mpi_init(&S);
     mbedtls_mpi_init(&temp);
 
+    const uint32_t hardware_status_y = 0;
+    const uint32_t prime_status_y = 8;
+    const uint32_t prime_display_y = 16;
+
     do {
         // Current Mersenne number may have been advanced by the user via CLI when we weren't looking
         furi_check(furi_mutex_acquire(instance->state_mutex, FuriWaitForever) == FuriStatusOk);
@@ -251,9 +276,10 @@ static void flipper95_run(Flipper95* instance) {
 
         // Print the canvas BEFORE starting the iteration, so the current number is updated before
         // we start heavy calculations.
-        char buffer[32];
+        char buffer[64];
         snprintf(buffer, sizeof(buffer), ">M%lu", p);
-        canvas_draw_str_aligned(instance->canvas, 128, 0, AlignRight, AlignTop, buffer);
+        canvas_draw_str_aligned(
+            instance->canvas, 128, prime_status_y, AlignRight, AlignTop, buffer);
 
         canvas_commit(instance->canvas);
         canvas_clear(instance->canvas);
@@ -312,11 +338,22 @@ static void flipper95_run(Flipper95* instance) {
             sizeof(buffer),
             !short_display ? "Last prime: M%lu" : "P: M%lu",
             instance->cur_mprime);
-        canvas_draw_str_aligned(instance->canvas, 0, 0, AlignLeft, AlignTop, buffer);
+        canvas_draw_str_aligned(instance->canvas, 0, prime_status_y, AlignLeft, AlignTop, buffer);
 
         // Render the prime one character at a time, with line breaks and ellipsis
         canvas_draw_ascii_str_wrapped_ellipsis(
-            instance->canvas, 0, 16, 128, 64, instance->mprime_str);
+            instance->canvas, 0, prime_display_y + 8, 128, 64, instance->mprime_str);
+
+        // Once everything else is done, display CPU usage and battery status
+        snprintf(buffer, sizeof(buffer), "C: %.1f%%", (double)flipper95_get_cpu_usage(instance));
+        canvas_draw_str_aligned(
+            instance->canvas, 0, hardware_status_y, AlignLeft, AlignTop, buffer);
+        snprintf(buffer, sizeof(buffer), "M: %.1f%%", (double)flipper95_get_mem_usage());
+        canvas_draw_str_aligned(
+            instance->canvas, 64, hardware_status_y, AlignCenter, AlignTop, buffer);
+        snprintf(buffer, sizeof(buffer), "B: %u%%", furi_hal_power_get_pct());
+        canvas_draw_str_aligned(
+            instance->canvas, 128, hardware_status_y, AlignRight, AlignTop, buffer);
 
         furi_thread_yield();
     } while((atomic_load_explicit(&instance->stop, memory_order_relaxed) & 1) == 0);

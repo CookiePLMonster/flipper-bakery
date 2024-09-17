@@ -6,4 +6,10 @@ App(
     stack_size=2 * 1024,
     fap_category="Tools",
     fap_libs=["mbedtls"],
+	
+	fap_version="1.0",
+    fap_icon="flipper95.png",
+    fap_description="Stress test your Flipper by crunching prime numbers",
+    fap_author="Silent",
+    fap_weburl="https://github.com/CookiePLMonster/flipper-bakery/flipper95",
 )
