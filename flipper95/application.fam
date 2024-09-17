@@ -1,0 +1,19 @@
+App(
+    appid="flipper95",
+    name="Flipper95",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="flipper95_app",
+    stack_size=2 * 1024,
+    fap_category="Tools",
+    fap_private_libs=[
+        Lib(
+            name="mbedtls",
+            fap_include_paths=["include"],
+            sources=[
+                "library/bignum.c",
+                "library/bignum_core.c",
+                "library/platform_util.c",
+            ],
+        ),
+    ],
+)
