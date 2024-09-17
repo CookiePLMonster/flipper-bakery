@@ -257,9 +257,10 @@ static void flipper95_run(Flipper95* instance) {
     mbedtls_mpi_init(&S);
     mbedtls_mpi_init(&temp);
 
-    const uint32_t hardware_status_y = 0;
-    const uint32_t prime_status_y = 8;
-    const uint32_t prime_display_y = 16;
+    uint32_t hardware_status_y = 8;
+    uint32_t prime_status_y = 16;
+    uint32_t prime_display_y = 24;
+    bool hardware_status_multiline = true;
 
     do {
         // Current Mersenne number may have been advanced by the user via CLI when we weren't looking
@@ -331,6 +332,15 @@ static void flipper95_run(Flipper95* instance) {
             furi_check(furi_mutex_release(instance->state_mutex) == FuriStatusOk);
         }
 
+        // Shift here as that's where we begin a new "frame" - if we shift displays up here,
+        //  >Mxx will go up in the next iteration too
+        if(hardware_status_multiline && instance->cur_mprime >= 500) {
+            hardware_status_multiline = false;
+            hardware_status_y -= 8;
+            prime_status_y -= 8;
+            prime_display_y -= 8;
+        }
+
         // Just to be safe, opt for shorter display if we are operating on primes big enough
         const bool short_display = p >= 100000 || instance->cur_mprime >= 100000;
         snprintf(
@@ -345,13 +355,30 @@ static void flipper95_run(Flipper95* instance) {
             instance->canvas, 0, prime_display_y + 8, 128, 64, instance->mprime_str);
 
         // Once everything else is done, display CPU usage and battery status
-        snprintf(buffer, sizeof(buffer), "C: %.1f%%", (double)flipper95_get_cpu_usage(instance));
+        const char* cpu_usage_str;
+        const char* mem_usage_str;
+        const char* battery_level_str;
+        if(hardware_status_multiline) {
+            canvas_draw_str_aligned(instance->canvas, 0, 0, AlignLeft, AlignTop, "CPU:");
+            canvas_draw_str_aligned(instance->canvas, 64, 0, AlignCenter, AlignTop, "Memory:");
+            canvas_draw_str_aligned(instance->canvas, 128, 0, AlignRight, AlignTop, "Battery:");
+
+            cpu_usage_str = "%.1f%%";
+            mem_usage_str = "%.1f%%";
+            battery_level_str = "%u%%";
+        } else {
+            cpu_usage_str = "C: %.1f%%";
+            mem_usage_str = "M: %.1f%%";
+            battery_level_str = "B: %u%%";
+        }
+
+        snprintf(buffer, sizeof(buffer), cpu_usage_str, (double)flipper95_get_cpu_usage(instance));
         canvas_draw_str_aligned(
             instance->canvas, 0, hardware_status_y, AlignLeft, AlignTop, buffer);
-        snprintf(buffer, sizeof(buffer), "M: %.1f%%", (double)flipper95_get_mem_usage());
+        snprintf(buffer, sizeof(buffer), mem_usage_str, (double)flipper95_get_mem_usage());
         canvas_draw_str_aligned(
             instance->canvas, 64, hardware_status_y, AlignCenter, AlignTop, buffer);
-        snprintf(buffer, sizeof(buffer), "B: %u%%", furi_hal_power_get_pct());
+        snprintf(buffer, sizeof(buffer), battery_level_str, furi_hal_power_get_pct());
         canvas_draw_str_aligned(
             instance->canvas, 128, hardware_status_y, AlignRight, AlignTop, buffer);
 
