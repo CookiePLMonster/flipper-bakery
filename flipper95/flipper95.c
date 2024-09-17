@@ -2,7 +2,7 @@
 #include <gui/gui.h>
 #include <input/input.h>
 
-#include <stdint.h>
+#include <stdatomic.h>
 
 #include <mbedtls/bignum.h>
 
@@ -13,7 +13,7 @@ typedef struct {
     FuriPubSubSubscription* input_subscription;
     Gui* gui;
     Canvas* canvas;
-    bool stop;
+    atomic_bool stop;
 } Flipper95;
 
 static void gui_input_events_callback(const void* value, void* ctx) {
@@ -24,8 +24,18 @@ static void gui_input_events_callback(const void* value, void* ctx) {
     const InputEvent* event = value;
 
     if(event->key == InputKeyBack && event->type == InputTypeShort) {
-        instance->stop = true;
+        atomic_store_explicit(&instance->stop, true, memory_order_relaxed);
     }
+}
+
+static bool thread_signal_callback(uint32_t signal, void* arg, void* context) {
+    UNUSED(arg);
+    if(signal == FuriSignalExit) {
+        Flipper95* instance = context;
+        atomic_store_explicit(&instance->stop, true, memory_order_relaxed);
+        return true;
+    }
+    return false;
 }
 
 static Flipper95* flipper95_alloc(void) {
@@ -37,6 +47,8 @@ static Flipper95* flipper95_alloc(void) {
 
     instance->input_subscription =
         furi_pubsub_subscribe(instance->input, gui_input_events_callback, instance);
+
+    atomic_init(&instance->stop, false);
 
     return instance;
 }
@@ -63,6 +75,7 @@ bool trial_division_is_prime(uint32_t n) {
 
 static void flipper95_run(Flipper95* instance) {
     furi_thread_set_current_priority(FuriThreadPriorityIdle);
+    furi_thread_set_signal_callback(furi_thread_get_current(), thread_signal_callback, instance);
 
     canvas_reset(instance->canvas);
 
@@ -87,7 +100,9 @@ static void flipper95_run(Flipper95* instance) {
 
         // Perform the LL test
         mbedtls_mpi_lset(&S, 4);
-        for(uint32_t i = 0; i < p - 2; i++) {
+        for(uint32_t i = 0;
+            i < p - 2 && !atomic_load_explicit(&instance->stop, memory_order_relaxed);
+            i++) {
             // S = (S^2 - 2) % M_p
             mbedtls_mpi_mul_mpi(&temp, &S, &S); // temp = S^2
             mbedtls_mpi_sub_int(&temp, &temp, 2); // temp = S^2 - 2
@@ -136,7 +151,7 @@ static void flipper95_run(Flipper95* instance) {
         }
 
         furi_thread_yield();
-    } while(!instance->stop);
+    } while(!atomic_load_explicit(&instance->stop, memory_order_relaxed));
 
     free(buffer);
 
