@@ -11,7 +11,10 @@
 
 #include <mbedtls/bignum.h>
 
-#define CLI_COMMAND "flipper95"
+#define CLI_COMMAND                     "flipper95"
+#define CLI_COMMAND_ADVANCE             "advance"
+#define CLI_COMMAND_LAST_PRIME          "prime"
+#define CLI_COMMAND_LAST_PERFECT_NUMBER "perfect_number"
 
 typedef struct {
     FuriPubSub* input;
@@ -57,8 +60,9 @@ static void flipper95_cli_print_usage() {
            "\r\n"
            "Usage:\r\n" CLI_COMMAND " <cmd> <args>\r\n"
            "Cmd list:\r\n"
-           "\tadvance M<p:int> - Advance calculations to a Mersenne number M_p\r\n"
-           "\tprint\t\t - Print the last found Mersenne prime\r\n");
+           "\t" CLI_COMMAND_ADVANCE " M<p:int> - Advance calculations to a Mersenne number M_p\r\n"
+           "\t" CLI_COMMAND_LAST_PRIME "\t\t - Print the last found Mersenne prime\r\n"
+           "\t" CLI_COMMAND_LAST_PERFECT_NUMBER "\t - Print the last found perfect number\r\n");
 }
 
 static bool flipper95_cli_set_mnumber(const FuriString* args, Flipper95* instance) {
@@ -77,6 +81,47 @@ static bool flipper95_cli_set_mnumber(const FuriString* args, Flipper95* instanc
     return false;
 }
 
+static bool flipper95_cli_print_prime(const Flipper95* instance) {
+    furi_check(furi_mutex_acquire(instance->state_mutex, FuriWaitForever) == FuriStatusOk);
+    printf("M%lu = %s\r\n", instance->cur_mprime, instance->mprime_str);
+    furi_check(furi_mutex_release(instance->state_mutex) == FuriStatusOk);
+    return true;
+}
+
+static bool flipper95_cli_print_perfect_number(const Flipper95* instance) {
+    furi_check(furi_mutex_acquire(instance->state_mutex, FuriWaitForever) == FuriStatusOk);
+    const uint32_t last_prime = instance->cur_mprime;
+    furi_check(furi_mutex_release(instance->state_mutex) == FuriStatusOk);
+
+    // Perfect number for M^p = 2^(p - 1) x (2^p  - 1)
+    mbedtls_mpi M_p, Two_p;
+    mbedtls_mpi_init(&M_p);
+    mbedtls_mpi_init(&Two_p);
+
+    mbedtls_mpi_lset(&M_p, 1);
+    mbedtls_mpi_shift_l(&M_p, last_prime); // 2^p
+    mbedtls_mpi_sub_int(&M_p, &M_p, 1); // 2^p - 1
+
+    mbedtls_mpi_lset(&Two_p, 1);
+    mbedtls_mpi_shift_l(&Two_p, last_prime - 1); // 2^(p - 1)
+
+    mbedtls_mpi_mul_mpi(&M_p, &M_p, &Two_p);
+
+    // Allocate space
+    size_t space_needed = 0;
+    mbedtls_mpi_write_string(&M_p, 10, NULL, 0, &space_needed);
+
+    char* buffer = malloc(space_needed);
+    furi_check(mbedtls_mpi_write_string(&M_p, 10, buffer, space_needed, &space_needed) == 0);
+    printf("Perfect%lu = %s\r\n", last_prime, buffer);
+    free(buffer);
+
+    mbedtls_mpi_free(&Two_p);
+    mbedtls_mpi_free(&M_p);
+
+    return true;
+}
+
 static void flipper95_cli_callback(Cli* cli, FuriString* args, void* context) {
     UNUSED(cli);
     Flipper95* instance = context;
@@ -84,8 +129,12 @@ static void flipper95_cli_callback(Cli* cli, FuriString* args, void* context) {
     FuriString* cmd = furi_string_alloc();
     bool success = false;
     if(args_read_string_and_trim(args, cmd)) {
-        if(furi_string_equal(cmd, "advance")) {
+        if(furi_string_equal(cmd, CLI_COMMAND_ADVANCE)) {
             success = flipper95_cli_set_mnumber(args, instance);
+        } else if(furi_string_equal(cmd, CLI_COMMAND_LAST_PRIME)) {
+            success = flipper95_cli_print_prime(instance);
+        } else if(furi_string_equal(cmd, CLI_COMMAND_LAST_PERFECT_NUMBER)) {
+            success = flipper95_cli_print_perfect_number(instance);
         }
     }
 
@@ -104,7 +153,7 @@ static void flipper95_init(Flipper95* instance) {
         furi_pubsub_subscribe(instance->input, gui_input_events_callback, instance);
 
     instance->state_mutex = furi_mutex_alloc(FuriMutexTypeNormal);
-    instance->cur_mnumber = 520;
+    instance->cur_mnumber = 2;
     instance->cur_mprime = 0;
     instance->mprime_str_len = 256;
     instance->mprime_str = malloc(instance->mprime_str_len);
