@@ -27,7 +27,7 @@ typedef struct {
     char* mprime_str;
     size_t mprime_str_len;
 
-    atomic_bool stop;
+    atomic_uint_least8_t stop; // Bitmask, 1 = stop app, 2 = stop current number
 } Flipper95;
 
 static void gui_input_events_callback(const void* value, void* ctx) {
@@ -38,7 +38,7 @@ static void gui_input_events_callback(const void* value, void* ctx) {
     const InputEvent* event = value;
 
     if(event->key == InputKeyBack && event->type == InputTypeShort) {
-        atomic_store_explicit(&instance->stop, true, memory_order_relaxed);
+        atomic_store_explicit(&instance->stop, 1, memory_order_relaxed);
     }
 }
 
@@ -46,7 +46,7 @@ static bool thread_signal_callback(uint32_t signal, void* arg, void* context) {
     UNUSED(arg);
     if(signal == FuriSignalExit) {
         Flipper95* instance = context;
-        atomic_store_explicit(&instance->stop, true, memory_order_relaxed);
+        atomic_store_explicit(&instance->stop, 1, memory_order_relaxed);
         return true;
     }
     return false;
@@ -70,6 +70,7 @@ static bool flipper95_cli_set_mnumber(const FuriString* args, Flipper95* instanc
             furi_check(furi_mutex_acquire(instance->state_mutex, FuriWaitForever) == FuriStatusOk);
             instance->cur_mnumber = number;
             furi_check(furi_mutex_release(instance->state_mutex) == FuriStatusOk);
+            atomic_fetch_or_explicit(&instance->stop, 2, memory_order_relaxed);
             return true;
         }
     }
@@ -109,7 +110,7 @@ static void flipper95_init(Flipper95* instance) {
     instance->mprime_str = malloc(instance->mprime_str_len);
     instance->mprime_str[0] = '\0';
 
-    atomic_init(&instance->stop, false);
+    atomic_init(&instance->stop, 0);
 }
 
 static void flipper95_deinit(Flipper95* instance) {
@@ -215,7 +216,7 @@ static void flipper95_run(Flipper95* instance) {
         // Perform the LL test
         mbedtls_mpi_lset(&S, 4);
         for(uint32_t i = 0;
-            i < p - 2 && !atomic_load_explicit(&instance->stop, memory_order_relaxed);
+            i < p - 2 && atomic_load_explicit(&instance->stop, memory_order_relaxed) == 0;
             i++) {
             // S = (S^2 - 2) % M_p
             mbedtls_mpi_mul_mpi(&temp, &S, &S); // temp = S^2
@@ -223,35 +224,45 @@ static void flipper95_run(Flipper95* instance) {
             mbedtls_mpi_mod_mpi(&S, &temp, &M_p); // S = (S^2 - 2) % M_p
         }
 
-        // Now update all the values we usually read from under the lock.
-        // We can render the Mersenne prime without a lock, as this is the only place where it can update.
-        const bool is_prime = mbedtls_mpi_cmp_int(&S, 0) == 0;
-        furi_check(furi_mutex_acquire(instance->state_mutex, FuriWaitForever) == FuriStatusOk);
-        if(instance->cur_mnumber == last_number) {
-            instance->cur_mnumber = p + 1;
-        }
-        if(is_prime) {
-            instance->cur_mprime = p;
-
-            size_t required_buffer_len = 0;
-            mbedtls_mpi_write_string(
-                &M_p, 10, instance->mprime_str, instance->mprime_str_len, &required_buffer_len);
-            if(required_buffer_len > instance->mprime_str_len) {
-                free(instance->mprime_str);
-                instance->mprime_str = malloc(required_buffer_len);
-                instance->mprime_str_len = required_buffer_len;
+        bool is_prime = false;
+        // Clear the skip flag, if present, and skip this number if it was set
+        if((atomic_fetch_and_explicit(&instance->stop, ~2, memory_order_relaxed) & 2) == 0) {
+            // Now update all the values we usually read from under the lock.
+            // We can render the Mersenne prime without a lock, as this is the only place where it can update.
+            is_prime = mbedtls_mpi_cmp_int(&S, 0) == 0;
+            furi_check(furi_mutex_acquire(instance->state_mutex, FuriWaitForever) == FuriStatusOk);
+            if(instance->cur_mnumber == last_number) {
+                instance->cur_mnumber = p + 1;
             }
-            furi_check(
-                mbedtls_mpi_write_string(
-                    &M_p,
-                    10,
-                    instance->mprime_str,
-                    instance->mprime_str_len,
-                    &required_buffer_len) == 0);
-        }
-        furi_check(furi_mutex_release(instance->state_mutex) == FuriStatusOk);
+            if(is_prime) {
+                instance->cur_mprime = p;
 
-        snprintf(buffer, sizeof(buffer), "Last prime: M%lu", instance->cur_mprime);
+                size_t required_buffer_len = 0;
+                mbedtls_mpi_write_string(
+                    &M_p, 10, instance->mprime_str, instance->mprime_str_len, &required_buffer_len);
+                if(required_buffer_len > instance->mprime_str_len) {
+                    free(instance->mprime_str);
+                    instance->mprime_str = malloc(required_buffer_len);
+                    instance->mprime_str_len = required_buffer_len;
+                }
+                furi_check(
+                    mbedtls_mpi_write_string(
+                        &M_p,
+                        10,
+                        instance->mprime_str,
+                        instance->mprime_str_len,
+                        &required_buffer_len) == 0);
+            }
+            furi_check(furi_mutex_release(instance->state_mutex) == FuriStatusOk);
+        }
+
+        // Just to be safe, opt for shorter display if we are operating on primes big enough
+        const bool short_display = p >= 100000 || instance->cur_mprime >= 100000;
+        snprintf(
+            buffer,
+            sizeof(buffer),
+            !short_display ? "Last prime: M%lu" : "P: M%lu",
+            instance->cur_mprime);
         canvas_draw_str_aligned(instance->canvas, 0, 0, AlignLeft, AlignTop, buffer);
 
         // Render the prime one character at a time, with line breaks and ellipsis
@@ -259,7 +270,7 @@ static void flipper95_run(Flipper95* instance) {
             instance->canvas, 0, 16, 128, 64, instance->mprime_str);
 
         furi_thread_yield();
-    } while(!atomic_load_explicit(&instance->stop, memory_order_relaxed));
+    } while((atomic_load_explicit(&instance->stop, memory_order_relaxed) & 1) == 0);
 
     mbedtls_mpi_free(&M_p);
     mbedtls_mpi_free(&S);
