@@ -101,12 +101,12 @@ static bool flipper95_cli_print_perfect_number(const Flipper95* instance) {
     mbedtls_mpi_init(&M_p);
     mbedtls_mpi_init(&Two_p);
 
-    mbedtls_mpi_lset(&M_p, 1);
-    mbedtls_mpi_shift_l(&M_p, last_prime); // 2^p
-    mbedtls_mpi_sub_int(&M_p, &M_p, 1); // 2^p - 1
-
     mbedtls_mpi_lset(&Two_p, 1);
     mbedtls_mpi_shift_l(&Two_p, last_prime - 1); // 2^(p - 1)
+
+    mbedtls_mpi_copy(&M_p, &Two_p);
+    mbedtls_mpi_shift_l(&M_p, 1); // 2^p = 2^(p - 1) << 1
+    mbedtls_mpi_sub_int(&M_p, &M_p, 1); // 2^p - 1
 
     mbedtls_mpi_mul_mpi(&M_p, &M_p, &Two_p);
 
