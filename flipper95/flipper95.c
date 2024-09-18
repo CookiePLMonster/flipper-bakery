@@ -9,6 +9,8 @@
 
 #include <stdatomic.h>
 
+//#undef MBEDTLS_CONFIG_FILE
+//#define MBEDTLS_CONFIG_FILE "mbedtls_cfg.h"
 #include <mbedtls/bignum.h>
 
 #define CLI_COMMAND                     "flipper95"
@@ -148,16 +150,9 @@ static float flipper95_get_cpu_usage(Flipper95* instance) {
     if(furi_thread_enumerate(instance->thread_list)) {
         const FuriThreadListItem* thread_metrics =
             furi_thread_list_get_or_insert(instance->thread_list, furi_thread_get_current());
-        return thread_metrics->cpu;
+        return CLAMP(thread_metrics->cpu, 100.0f, 0.0f);
     }
     return 0.0f;
-}
-
-static float flipper95_get_mem_usage() {
-    const size_t total = memmgr_get_total_heap();
-    const size_t used = total - memmgr_get_free_heap();
-
-    return (100.0f * used) / total;
 }
 
 static void flipper95_init(Flipper95* instance) {
@@ -356,26 +351,41 @@ static void flipper95_run(Flipper95* instance) {
 
         // Once everything else is done, display CPU usage and battery status
         const char* cpu_usage_str;
-        const char* mem_usage_str;
+        const char* battery_consumption_str;
+        const char* battery_charging_str;
+        const char* battery_full_str;
         const char* battery_level_str;
         if(hardware_status_multiline) {
             canvas_draw_str_aligned(instance->canvas, 0, 0, AlignLeft, AlignTop, "CPU:");
-            canvas_draw_str_aligned(instance->canvas, 64, 0, AlignCenter, AlignTop, "Memory:");
+            canvas_draw_str_aligned(instance->canvas, 64, 0, AlignCenter, AlignTop, "Draw:");
             canvas_draw_str_aligned(instance->canvas, 128, 0, AlignRight, AlignTop, "Battery:");
 
             cpu_usage_str = "%.1f%%";
-            mem_usage_str = "%.1f%%";
+            battery_consumption_str = "%ldmA";
             battery_level_str = "%u%%";
+            battery_charging_str = "Charging";
+            battery_full_str = "Charged";
         } else {
             cpu_usage_str = "C: %.1f%%";
-            mem_usage_str = "M: %.1f%%";
+            battery_consumption_str = "A: %ldmA";
             battery_level_str = "B: %u%%";
+            battery_charging_str = "A: Chrg";
+            battery_full_str = "A: Full";
         }
+
+        const int32_t battery_consumption =
+            furi_hal_power_get_battery_current(FuriHalPowerICFuelGauge) * 1000;
 
         snprintf(buffer, sizeof(buffer), cpu_usage_str, (double)flipper95_get_cpu_usage(instance));
         canvas_draw_str_aligned(
             instance->canvas, 0, hardware_status_y, AlignLeft, AlignTop, buffer);
-        snprintf(buffer, sizeof(buffer), mem_usage_str, (double)flipper95_get_mem_usage());
+        if(battery_consumption > 0) {
+            strlcpy(buffer, battery_charging_str, sizeof(buffer));
+        } else if(battery_consumption < -5) {
+            snprintf(buffer, sizeof(buffer), battery_consumption_str, -battery_consumption);
+        } else {
+            strlcpy(buffer, battery_full_str, sizeof(buffer));
+        }
         canvas_draw_str_aligned(
             instance->canvas, 64, hardware_status_y, AlignCenter, AlignTop, buffer);
         snprintf(buffer, sizeof(buffer), battery_level_str, furi_hal_power_get_pct());
