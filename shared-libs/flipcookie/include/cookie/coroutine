@@ -4,6 +4,8 @@
 
 #include <atomic>
 #include <coroutine>
+#include <optional>
+#include <tuple>
 
 #include "common"
 #include "event_loop"
@@ -19,20 +21,6 @@ namespace details::coroutine {
 template <typename T>
 concept is_timer_type = std::same_as<T, FuriTimer> || std::same_as<T, FuriEventLoopTimer>;
 
-// Workaround for the lack of `furi_event_loop_timer_get_owner()` - empty class for FuriTimer,
-// a class storing FuriEventLoop* for FuriEventLoopTimer
-template <typename T>
-struct event_loop_field {};
-
-template <>
-struct event_loop_field<::FuriEventLoopTimer*> {
-    event_loop_field(::FuriEventLoop* event_loop)
-        : m_event_loop(event_loop) {
-    }
-
-    ::FuriEventLoop* m_event_loop;
-};
-
 template <typename T>
 struct timer_start_stop;
 
@@ -45,14 +33,6 @@ struct timer_start_stop<::FuriTimer*> {
     static void stop(::FuriTimer* timer) {
         ::furi_timer_stop(timer);
     }
-
-    static void pend(
-        [[maybe_unused]] const event_loop_field<::FuriTimer*>& event_loop,
-        FuriTimerPendigCallback callback,
-        void* context,
-        uint32_t arg = 0) {
-        ::furi_timer_pending_callback(callback, context, arg);
-    }
 };
 
 template <>
@@ -63,14 +43,6 @@ struct timer_start_stop<::FuriEventLoopTimer*> {
 
     static void stop(::FuriEventLoopTimer* timer) {
         ::furi_event_loop_timer_stop(timer);
-    }
-
-    static void pend(
-        const event_loop_field<::FuriEventLoopTimer*>& event_loop,
-        FuriEventLoopPendingCallback callback,
-        void* context,
-        [[maybe_unused]] uint32_t arg = 0) {
-        ::furi_event_loop_pend_callback(event_loop.m_event_loop, callback, context);
     }
 };
 
@@ -83,18 +55,16 @@ class AwaitableTimer {
 public:
     using timer_type = T;
     using timer_furi_type = typename timer_type::pointer;
-    using event_loop_field = details::coroutine::event_loop_field<timer_furi_type>;
     using timer_start_stop = details::coroutine::timer_start_stop<timer_furi_type>;
 
     AwaitableTimer()
     requires std::same_as<timer_type, FuriTimer>
-        : m_timer(timer_callback, FuriTimerTypeOnce, &m_awaiting_handle_ptr) {
+        : m_timer(timer_callback, FuriTimerTypeOnce, &m_awaiting_handle) {
     }
 
     AwaitableTimer(::FuriEventLoop* event_loop)
     requires std::same_as<timer_type, FuriEventLoopTimer>
-        : m_timer(event_loop, timer_callback, FuriEventLoopTimerTypeOnce, &m_awaiting_handle_ptr)
-        , m_event_loop(event_loop) {
+        : m_timer(event_loop, timer_callback, FuriEventLoopTimerTypeOnce, &m_awaiting_handle) {
     }
 
     void wake_up(bool keep_awake_forever = false) {
@@ -105,11 +75,16 @@ public:
         m_state_flags.store(new_flags, std::memory_order_relaxed);
 
         timer_start_stop::stop(*m_timer);
-        std::coroutine_handle<>* current_handle =
-            m_awaiting_handle_ptr.exchange(nullptr, std::memory_order_relaxed);
-        if(current_handle != nullptr) {
-            timer_start_stop::pend(m_event_loop, timer_pend_callback, current_handle->address());
+        std::coroutine_handle<> current_handle =
+            m_awaiting_handle.exchange(nullptr, std::memory_order_relaxed);
+        if(current_handle) {
+            current_handle.resume();
         }
+    }
+
+    void reset() {
+        m_state_flags.store(0, std::memory_order_relaxed);
+        m_awaiting_handle.store(nullptr, std::memory_order_relaxed);
     }
 
     auto await_delay(uint32_t interval) {
@@ -124,8 +99,7 @@ public:
             }
 
             void await_suspend(std::coroutine_handle<> h) {
-                m_awaiting_coroutine = h;
-                m_timer->start(&m_awaiting_coroutine, m_interval);
+                m_timer->start(h.address(), m_interval);
             }
 
             bool await_resume() {
@@ -135,7 +109,6 @@ public:
             }
 
         private:
-            std::coroutine_handle<> m_awaiting_coroutine;
             AwaitableTimer* m_timer;
             uint32_t m_interval;
         };
@@ -143,14 +116,15 @@ public:
     }
 
 private:
-    void start(std::coroutine_handle<>* handle_ptr, uint32_t interval) {
-        m_awaiting_handle_ptr.store(handle_ptr, std::memory_order_relaxed);
+    void start(void* handle_ptr, uint32_t interval) {
+        m_awaiting_handle.store(
+            std::coroutine_handle<>::from_address(handle_ptr), std::memory_order_relaxed);
         timer_start_stop::start(*m_timer, interval);
     }
 
     bool stop() {
         timer_start_stop::stop(*m_timer);
-        m_awaiting_handle_ptr.store(nullptr, std::memory_order_relaxed);
+        m_awaiting_handle.store(nullptr, std::memory_order_relaxed);
 
         // Return true if the timer was skipped, either one-off or sticky
         return try_clear_skip_flag();
@@ -164,22 +138,12 @@ private:
     }
 
     static void timer_callback(void* context) {
-        auto handle_ptr = reinterpret_cast<std::atomic<std::coroutine_handle<>*>*>(context);
-        std::coroutine_handle<>* current_handle =
+        auto handle_ptr = reinterpret_cast<std::atomic<std::coroutine_handle<>>*>(context);
+        std::coroutine_handle<> current_handle =
             handle_ptr->exchange(nullptr, std::memory_order_relaxed);
-        if(current_handle != nullptr) {
-            current_handle->resume();
+        if(current_handle) {
+            current_handle.resume();
         }
-    }
-
-    static void timer_pend_callback(void* context) {
-        std::coroutine_handle<> handle = std::coroutine_handle<>::from_address(context);
-        handle.resume();
-    }
-
-    // Overload for FuriTimer*
-    static void timer_pend_callback(void* context, [[maybe_unused]] uint32_t arg) {
-        timer_pend_callback(context);
     }
 
 private:
@@ -190,9 +154,7 @@ private:
     IMPLEMENT_FRIEND_BITWISE_ENUM_CLASS_OPS(StateFlags)
 
     timer_type m_timer;
-    // Workaround for the lack of furi_event_loop_timer_get_owner
-    [[no_unique_address]] event_loop_field m_event_loop;
-    std::atomic<std::coroutine_handle<>*> m_awaiting_handle_ptr{};
+    std::atomic<std::coroutine_handle<>> m_awaiting_handle;
     std::atomic<uint8_t> m_state_flags{};
 };
 
@@ -200,14 +162,12 @@ private:
 // this return object MUST be stored somewhere, preferably an object. The lifetime of the coroutine
 // is ALWAYS tied to the lifetime of this return object, fire-and-forget coroutines are NOT possible.
 // TODO2: Support return values, right now only Task<void> is supported
-template <typename T = void>
+template <typename... T>
 struct [[nodiscard("The task object must be stored")]] Task {
     struct promise_type;
     using handle_type = std::coroutine_handle<promise_type>;
-    using return_type = T;
-
-    // TODO: For now we only allow Task<void>
-    static_assert(std::is_void_v<return_type>);
+    using result_holder_type = std::tuple<T...>;
+    static constexpr std::size_t num_results = std::tuple_size_v<result_holder_type>;
 
     struct promise_type {
         Task get_return_object() {
@@ -219,10 +179,25 @@ struct [[nodiscard("The task object must be stored")]] Task {
         std::suspend_always final_suspend() {
             return {};
         }
-        void unhandled_exception() {
+
+        void return_value()
+        requires(num_results == 0)
+        {
         }
-        void return_void() {
+
+        void return_value(auto&& result)
+        requires(num_results == 1)
+        {
+            m_result_holder = result;
         }
+
+        void return_value(result_holder_type&& results)
+        requires(num_results > 1)
+        {
+            m_result_holder = std::forward<result_holder_type>(results);
+        }
+
+        [[no_unique_address]] result_holder_type m_result_holder;
     };
 
     Task() = default;
@@ -252,8 +227,42 @@ struct [[nodiscard("The task object must be stored")]] Task {
         }
     }
 
-    bool is_active() const {
-        return m_handle != nullptr && !m_handle.done();
+    bool has_started() const {
+        return m_handle;
+    }
+
+    bool is_running() const {
+        return m_handle && !m_handle.done();
+    }
+
+    bool has_finished() const {
+        return m_handle && m_handle.done();
+    }
+
+    auto try_take_result()
+    requires(num_results == 1)
+    {
+        std::optional<std::tuple_element_t<0, result_holder_type>> result;
+        if(has_finished()) {
+            result.emplace(std::move(std::get<0>(m_handle.promise().m_result_holder)));
+
+            // Once we move the results away, we don't really need the coroutine anymore
+            reset();
+        }
+        return result;
+    }
+
+    auto try_take_result()
+    requires(num_results > 1)
+    {
+        std::optional<result_holder_type> result;
+        if(has_finished()) {
+            result.emplace(std::move(m_handle.promise().m_result_holder));
+
+            // Once we move the results away, we don't really need the coroutine anymore
+            reset();
+        }
+        return result;
     }
 
 private:

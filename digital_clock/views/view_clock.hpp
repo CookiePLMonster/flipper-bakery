@@ -60,14 +60,14 @@ private:
         bool OnInput(const InputEvent* event);
         static void OnDraw(Canvas* canvas, const Model& model);
 
-        cookie::Task<> ProcessExitInputsAsync();
+        cookie::Task<bool> ProcessExitInputsAsync();
 
     private:
         outer_type* get_outer() const;
 
     private:
         cookie::AwaitableTimer<cookie::FuriEventLoopTimer> m_lock_timer;
-        cookie::Task<> m_lock_task;
+        cookie::Task<bool> m_lock_task;
     };
     LockScreenOverlay m_lock_overlay;
 

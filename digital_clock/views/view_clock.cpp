@@ -134,14 +134,19 @@ void DigitalClockView::LockScreenOverlay::OnExit() {
 
 bool DigitalClockView::LockScreenOverlay::OnInput(const InputEvent* event) {
     if(event->type == InputTypeShort && event->key == InputKeyBack) {
-        if(m_lock_task.is_active()) {
-            m_lock_timer.wake_up();
-        } else {
-            m_lock_task = ProcessExitInputsAsync();
-            // TODO: This may be improved with contiuations, for example:
-            // m_lock_task.then([this](bool result) { // do work... }));
+        m_lock_timer.wake_up();
+
+        auto task_result = m_lock_task.try_take_result();
+        if(task_result.value_or(false)) {
+            // Successfully skipped, pass the input to the actual handler
+            return false;
         }
 
+        if(!m_lock_task.is_running()) {
+            // Either timed out, or not started yet - so restart
+            m_lock_timer.reset();
+            m_lock_task = ProcessExitInputsAsync();
+        }
         return true;
     }
     return false;
@@ -165,7 +170,7 @@ void DigitalClockView::LockScreenOverlay::OnDraw(Canvas* canvas, const Model& mo
     canvas_set_bitmap_mode(canvas, false);
 }
 
-cookie::Task<> DigitalClockView::LockScreenOverlay::ProcessExitInputsAsync() {
+cookie::Task<bool> DigitalClockView::LockScreenOverlay::ProcessExitInputsAsync() {
     DigitalClockView* clock_view = get_outer();
     clock_view->ShowLockScreen(true);
 
@@ -173,10 +178,10 @@ cookie::Task<> DigitalClockView::LockScreenOverlay::ProcessExitInputsAsync() {
         if(co_await m_lock_timer.await_delay(LOCK_TIMEOUT_TICKS)) {
             // Timed out
             clock_view->ShowLockScreen(false);
-            co_return;
+            co_return false;
         }
     }
-    clock_view->get_outer()->SendAppEvent(AppLogicEvent::ExitRequested);
+    co_return true;
 }
 
 IMPLEMENT_GET_OUTER(DigitalClockView);

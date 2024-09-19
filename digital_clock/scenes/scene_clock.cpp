@@ -6,14 +6,12 @@ void scene_clock_on_enter(void* context) {
 }
 
 void scene_clock_on_exit(void* context) {
-    DigitalClockApp* app = static_cast<DigitalClockApp*>(context);
-    UNUSED(app);
+    UNUSED(context);
 }
 
 bool scene_clock_on_event(void* context, SceneManagerEvent event) {
     DigitalClockApp* app = static_cast<DigitalClockApp*>(context);
-    if(event.type == SceneManagerEventTypeCustom &&
-       event.event == cookie::furi_enum_param(AppLogicEvent::ExitRequested)) {
+    if(event.type == SceneManagerEventTypeBack) {
         app->Exit();
         return true;
     }
