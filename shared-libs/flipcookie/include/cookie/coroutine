@@ -161,12 +161,14 @@ private:
 // Generic task type. Contrary to what is allowed in C++ apps targeting more elaborate systems,
 // this return object MUST be stored somewhere, preferably an object. The lifetime of the coroutine
 // is ALWAYS tied to the lifetime of this return object, fire-and-forget coroutines are NOT possible.
-// TODO2: Support return values, right now only Task<void> is supported
 template <typename... T>
 struct [[nodiscard("The task object must be stored")]] Task {
     struct promise_type;
     using handle_type = std::coroutine_handle<promise_type>;
-    using result_holder_type = std::tuple<T...>;
+    using result_holder_type = std::conditional_t<
+        std::is_same_v<std::tuple<T...>, std::tuple<void>>,
+        std::tuple<>,
+        std::tuple<T...>>;
     static constexpr std::size_t num_results = std::tuple_size_v<result_holder_type>;
 
     struct promise_type {
@@ -180,15 +182,10 @@ struct [[nodiscard("The task object must be stored")]] Task {
             return {};
         }
 
-        void return_value()
-        requires(num_results == 0)
-        {
-        }
-
         void return_value(auto&& result)
         requires(num_results == 1)
         {
-            m_result_holder = result;
+            m_result_holder = std::forward<decltype(result)>(result);
         }
 
         void return_value(result_holder_type&& results)
@@ -239,6 +236,10 @@ struct [[nodiscard("The task object must be stored")]] Task {
         return m_handle && m_handle.done();
     }
 
+    void try_take_result()
+    requires(num_results == 0)
+    = delete;
+
     auto try_take_result()
     requires(num_results == 1)
     {
@@ -267,6 +268,31 @@ struct [[nodiscard("The task object must be stored")]] Task {
 
 private:
     handle_type m_handle;
+};
+
+// Specializations for void types, necessary to get return_void functioning
+template <>
+struct Task<void>::promise_type {
+    Task get_return_object() {
+        return Task(handle_type::from_promise(*this));
+    }
+
+    std::suspend_never initial_suspend() {
+        return {};
+    }
+    std::suspend_always final_suspend() {
+        return {};
+    }
+
+    void return_void() {
+    }
+};
+
+template <>
+struct Task<>::promise_type : public Task<void>::promise_type {
+    Task get_return_object() {
+        return Task(handle_type::from_promise(*this));
+    }
 };
 
 }
