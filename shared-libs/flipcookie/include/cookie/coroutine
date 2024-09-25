@@ -99,7 +99,7 @@ public:
             }
 
             void await_suspend(std::coroutine_handle<> h) {
-                m_timer->start(h.address(), m_interval);
+                m_timer->start(h, m_interval);
             }
 
             bool await_resume() {
@@ -116,9 +116,8 @@ public:
     }
 
 private:
-    void start(void* handle_ptr, uint32_t interval) {
-        m_awaiting_handle.store(
-            std::coroutine_handle<>::from_address(handle_ptr), std::memory_order_relaxed);
+    void start(std::coroutine_handle<> handle, uint32_t interval) {
+        m_awaiting_handle.store(handle, std::memory_order_relaxed);
         timer_start_stop::start(*m_timer, interval);
     }
 
