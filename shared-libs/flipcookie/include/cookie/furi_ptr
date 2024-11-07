@@ -14,12 +14,6 @@ public:
     using element_type = T;
     using pointer = T*;
 
-    // Allocating constructor
-    FURI_ALWAYS_INLINE furi_ptr()
-        : m_ptr(Alloc()()) {
-    }
-
-    // Variadic constructor for Alloc functions that take parameters
     template <typename... Args>
     FURI_ALWAYS_INLINE explicit furi_ptr(Args&&... args)
         : m_ptr(Alloc()(std::forward<Args>(args)...)) {
