@@ -8,10 +8,13 @@ on:
     - cron: "0 3 * * *"
 
 jobs:
-  lint-sources:
+  lint-and-build:
     runs-on: ubuntu-latest
-    name: 'ufbt: Lint sources'
-    if: github.event_name != 'schedule'
+    strategy:
+      matrix:
+        sdk-channel: [dev, release]
+        app-dir: [mode7_demo]
+    name: 'ufbt: Link and build ${{ matrix.app-dir }} for ${{ matrix.sdk-channel }}'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -19,28 +22,17 @@ jobs:
         uses: flipperdevices/flipperzero-ufbt-action@v0.1
         with:
           task: lint
-
-  ufbt-build:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - name: dev channel
-            sdk-channel: dev
-          - name: release channel
-            sdk-channel: release
-    name: 'ufbt: Build for ${{ matrix.name }}'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+          app-dir: ${{ matrix.app-dir }}
       - name: Build with uFBT
         uses: flipperdevices/flipperzero-ufbt-action@v0.1
         id: build-app
         with:
+          skip-setup: true
+          task: build
           sdk-channel: ${{ matrix.sdk-channel }}
+          app-dir: ${{ matrix.app-dir }}
       - name: Upload app artifacts
         uses: actions/upload-artifact@v4
         with:
-          # See ufbt action docs for other output variables
           name: ${{ github.event.repository.name }}-${{ steps.build-app.outputs.suffix }}
           path: ${{ steps.build-app.outputs.fap-artifacts }}
