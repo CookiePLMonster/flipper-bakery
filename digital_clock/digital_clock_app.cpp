@@ -27,11 +27,10 @@ DigitalClockApp::DigitalClockApp()
         view_dispatcher_get_event_loop(*m_view_dispatcher),
         *m_tick_tock_semaphore,
         FuriEventLoopEventIn,
-        [](FuriEventLoopObject* object, void* context) {
+        [](void* object, void* context) {
             DigitalClockApp* app = reinterpret_cast<DigitalClockApp*>(context);
             app->SendAppEvent(AppLogicEvent::TickTock);
             furi_semaphore_acquire(reinterpret_cast<::FuriSemaphore*>(object), FuriWaitForever);
-            return true;
         },
         this);
 
