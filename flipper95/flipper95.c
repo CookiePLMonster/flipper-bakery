@@ -23,7 +23,7 @@ typedef struct {
     FuriPubSubSubscription* input_subscription;
     Gui* gui;
     Canvas* canvas;
-    Cli* cli;
+    CliRegistry* cli;
     FuriThreadList* thread_list;
 
     // These are protected by the mutex
@@ -59,13 +59,14 @@ static bool thread_signal_callback(uint32_t signal, void* arg, void* context) {
 }
 
 static void flipper95_cli_print_usage() {
-    printf("Stress test your Flipper by calculating Mersenne primes, same as Prime95 does\r\n"
-           "\r\n"
-           "Usage:\r\n" CLI_COMMAND " <cmd> <args>\r\n"
-           "Cmd list:\r\n"
-           "\t" CLI_COMMAND_ADVANCE " M<p:int> - Advance calculations to a Mersenne number M_p\r\n"
-           "\t" CLI_COMMAND_LAST_PRIME "\t\t - Print the last found Mersenne prime\r\n"
-           "\t" CLI_COMMAND_LAST_PERFECT_NUMBER "\t - Print the last found perfect number\r\n");
+    printf(
+        "Stress test your Flipper by calculating Mersenne primes, same as Prime95 does\r\n"
+        "\r\n"
+        "Usage:\r\n" CLI_COMMAND " <cmd> <args>\r\n"
+        "Cmd list:\r\n"
+        "\t" CLI_COMMAND_ADVANCE " M<p:int> - Advance calculations to a Mersenne number M_p\r\n"
+        "\t" CLI_COMMAND_LAST_PRIME "\t\t - Print the last found Mersenne prime\r\n"
+        "\t" CLI_COMMAND_LAST_PERFECT_NUMBER "\t - Print the last found perfect number\r\n");
 }
 
 static bool flipper95_cli_set_mnumber(const FuriString* args, Flipper95* instance) {
@@ -125,8 +126,8 @@ static bool flipper95_cli_print_perfect_number(const Flipper95* instance) {
     return true;
 }
 
-static void flipper95_cli_callback(Cli* cli, FuriString* args, void* context) {
-    UNUSED(cli);
+static void flipper95_cli_callback(PipeSide* pipe, FuriString* args, void* context) {
+    UNUSED(pipe);
     Flipper95* instance = context;
 
     FuriString* cmd = furi_string_alloc();
@@ -240,7 +241,7 @@ static void canvas_draw_ascii_str_wrapped_ellipsis(
 static void flipper95_run(Flipper95* instance) {
     furi_thread_set_current_priority(FuriThreadPriorityIdle);
     furi_thread_set_signal_callback(furi_thread_get_current(), thread_signal_callback, instance);
-    cli_add_command(
+    cli_registry_add_command(
         instance->cli, CLI_COMMAND, CliCommandFlagParallelSafe, flipper95_cli_callback, instance);
     furi_hal_power_insomnia_enter();
 
@@ -400,7 +401,7 @@ static void flipper95_run(Flipper95* instance) {
     mbedtls_mpi_free(&temp);
 
     furi_hal_power_insomnia_exit();
-    cli_delete_command(instance->cli, CLI_COMMAND);
+    cli_registry_delete_command(instance->cli, CLI_COMMAND);
 }
 
 int32_t flipper95_app(void* p) {
