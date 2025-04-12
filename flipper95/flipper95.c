@@ -145,6 +145,7 @@ static void flipper95_cli_callback(PipeSide* pipe, FuriString* args, void* conte
     if(!success) {
         flipper95_cli_print_usage();
     }
+    furi_string_free(cmd);
 }
 
 static float flipper95_get_cpu_usage(Flipper95* instance) {
